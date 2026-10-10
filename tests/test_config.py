@@ -17,6 +17,7 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
     monkeypatch.setenv("EMBEDDING_DIM", "1536")
     monkeypatch.setenv("RAG_TOP_K", "5")
+    monkeypatch.setenv("RAG_CANDIDATE_K", "20")
     monkeypatch.setenv("LLM_TEMPERATURE", "0.0")
     monkeypatch.setenv("CHUNKING_STRATEGY", "recursive")
     monkeypatch.setenv("COLLECTION_NAME", "tkpi_gi")
@@ -36,6 +37,7 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.embedding_model_name == "text-embedding-3-small"
     assert s.embedding_dim == 1536
     assert s.rag_top_k == 5
+    assert s.rag_candidate_k == 20
     assert s.llm_temperature == 0.0
     assert s.chunking_strategy == "recursive"
     assert s.collection_name == "tkpi_gi"
@@ -60,8 +62,8 @@ def test_settings_rejects_invalid_embedding_dim(monkeypatch: pytest.MonkeyPatch)
         Settings()
 
 
-def test_settings_rejects_invalid_rag_top_k(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("RAG_TOP_K", "0")
+def test_settings_rejects_invalid_rag_candidate_k(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RAG_CANDIDATE_K", "0")
 
     with pytest.raises(ValidationError):
         Settings()
@@ -106,6 +108,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.embedding_model_name == "your-embedding-model"
     assert s.embedding_dim == 1536
     assert s.rag_top_k == 5
+    assert s.rag_candidate_k == 20
     assert s.llm_temperature == 0.0
     assert s.chunking_strategy == "recursive"
     assert s.collection_name == "tkpi_gi"

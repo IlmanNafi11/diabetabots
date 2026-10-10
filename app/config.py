@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     embedding_model_name: str = "your-embedding-model"
     embedding_dim: int = Field(default=1536, gt=0)
     rag_top_k: int = Field(default=5, gt=0)
+    # Retrieval candidate pool used to ground results against TKPI food names.
+    # The service embeds the query, pulls this many nearest neighbours, then
+    # ranks them by query/name token overlap so the correct entry is chosen even
+    # when the embedding distance order is misleading. Must be >= rag_top_k.
+    rag_candidate_k: int = Field(default=20, gt=0)
     llm_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
 
     # --- RAG config (winning chunking + embedding decided by the Iterasi 0 spike) ---

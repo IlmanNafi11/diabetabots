@@ -28,6 +28,7 @@ Dependencies
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -43,6 +44,8 @@ __all__ = [
     "RetrievedFood",
     "build_query_context",
     "build_retrieved_foods",
+    "query_terms",
+    "rank_retrieved_foods",
 ]
 
 
@@ -162,18 +165,21 @@ class RAGService:
         Returns
         -------
         list[RetrievedFood]
-            Top-k results ordered by ascending cosine distance.
+            Top-k name-grounded results, ordered by query/name token overlap and
+            then cosine distance; empty when no distinctive query token matches a
+            TKPI food name.
         """
-        n_results = top_k if top_k is not None else self._settings.rag_top_k
+        requested = top_k if top_k is not None else self._settings.rag_top_k
+        candidate_k = max(getattr(self._settings, "rag_candidate_k", requested), requested)
         embedder = self._get_embedder()
         collection = self._get_collection()
         query_vector = embedder.embed_query(query)
         raw = collection.query(
             query_embeddings=[query_vector],
-            n_results=n_results,
+            n_results=candidate_k,
             where=where,
         )
-        return build_retrieved_foods(raw)
+        return rank_retrieved_foods(build_retrieved_foods(raw), query, limit=requested)
 
     # ------------------------------------------------------------------
     # Internal helpers (overridable for testing)
@@ -305,6 +311,115 @@ def build_query_context(
         lines.append("")
 
     return "\n".join(lines).strip()
+
+
+#: Words that carry no food-identifying signal. They are stripped from a query
+#: before name grounding so that a portion word ("mangkuk") or a generic term
+#: ("sayur") cannot make an unrelated TKPI entry look like a match.
+GENERIC_QUERY_TERMS: frozenset[str] = frozenset(
+    {
+        "apa",
+        "berapa",
+        "banyak",
+        "bg",
+        "buah",
+        "bungkus",
+        "butir",
+        "cek",
+        "dan",
+        "dengan",
+        "ekor",
+        "gelas",
+        "gizi",
+        "glikemik",
+        "gram",
+        "indeks",
+        "ini",
+        "itu",
+        "kalori",
+        "kandungan",
+        "karbohidrat",
+        "lauk",
+        "lemak",
+        "makan",
+        "makanan",
+        "mangkuk",
+        "mengandung",
+        "minum",
+        "nutrisi",
+        "ons",
+        "piring",
+        "pokok",
+        "porsi",
+        "potong",
+        "protein",
+        "saya",
+        "sayur",
+        "sdm",
+        "sdt",
+        "sedang",
+        "segini",
+        "sendok",
+        "serat",
+        "tinggi",
+        "tolong",
+        "tidak",
+        "untuk",
+        "yang",
+    }
+)
+
+
+def _name_tokens(text: str) -> list[str]:
+    """Split text into lower-case alphanumeric tokens."""
+    return re.findall(r"[a-z0-9]+", text.casefold())
+
+
+def query_terms(query: str) -> tuple[str, ...]:
+    """Return the distinctive (non-generic) tokens that identify a query's food.
+
+    A query of only generic/portion words yields an empty tuple; callers must
+    then fall back to the raw embedding order rather than filtering everything.
+    """
+    return tuple(
+        token
+        for token in _name_tokens(query)
+        if token not in GENERIC_QUERY_TERMS and len(token) >= 3
+    )
+
+
+def rank_retrieved_foods(
+    foods: Sequence[RetrievedFood],
+    query: str,
+    limit: int | None = None,
+) -> list[RetrievedFood]:
+    """Ground retrieved foods against the query's distinctive tokens.
+
+    Embedding similarity alone cannot tell that a query names a food absent
+    from the corpus: the nearest neighbour of ``"sayur aster"`` is ``"Ares,
+    sayur"``, an unrelated entry. This gate keeps only foods whose name shares
+    at least one distinctive query token, ranked by token overlap (then by
+    embedding distance), so unrelated queries return an empty list and the
+    handler can answer "not found" instead of narrating the wrong food.
+
+    When the query has no distinctive tokens the foods are returned unchanged
+    in embedding order.
+    """
+    terms = query_terms(query)
+    if not terms or not foods:
+        return list(foods[:limit] if limit is not None else foods)
+
+    scored: list[tuple[int, float, int, RetrievedFood]] = []
+    for order, food in enumerate(foods):
+        name_tokens = set(_name_tokens(food.name))
+        overlap = sum(1 for term in terms if term in name_tokens)
+        if overlap == 0:
+            continue
+        scored.append((-overlap, food.distance, order, food))
+
+    scored.sort()
+    ranked = [food for *_, food in scored]
+    return ranked[:limit] if limit is not None else ranked
 
 
 # ---------------------------------------------------------------------------

@@ -42,8 +42,8 @@ def mock_settings() -> MagicMock:
     s.llm_base_url = "https://api.example.com/v1"
     s.llm_api_key = "test-key"
     s.embedding_model_name = "text-embedding-3-large"
-    s.embedding_dim = 3072
     s.rag_top_k = 5
+    s.rag_candidate_k = 20
     s.chunking_strategy = "recursive"
     s.collection_name = "tkpi_gi"
     s.chroma_persist_dir = "./chroma_db"
@@ -182,7 +182,7 @@ class TestRetrieve:
         service.retrieve("nasi putih")
         mock_embedder.embed_query.assert_called_once_with("nasi putih")
 
-    def test_queries_collection_with_top_k(
+    def test_queries_collection_with_candidate_pool(
         self,
         mock_settings: MagicMock,
         mock_embedder: MagicMock,
@@ -191,8 +191,52 @@ class TestRetrieve:
         service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
         service.retrieve("nasi putih")
         kwargs = mock_collection.query.call_args.kwargs
-        assert kwargs["n_results"] == mock_settings.rag_top_k
+        assert kwargs["n_results"] == mock_settings.rag_candidate_k
         assert kwargs["where"] is None
+
+    def test_rejects_semantically_similar_but_unnamed_food(
+        self,
+        mock_settings: MagicMock,
+        mock_embedder: MagicMock,
+        mock_collection: MagicMock,
+    ) -> None:
+        service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
+
+        assert service.retrieve("sayur aster") == []
+
+    def test_reranks_name_grounded_candidate_ahead_of_nearest_unrelated_result(
+        self,
+        mock_settings: MagicMock,
+        mock_embedder: MagicMock,
+    ) -> None:
+        collection = MagicMock()
+        collection.query.return_value = {
+            "ids": [["food-1", "food-2"]],
+            "distances": [[0.1, 0.5]],
+            "metadatas": [
+                [
+                    {"name": "Kool kembang", "category": "sayuran"},
+                    {"name": "Ikan oci, kembung, segar", "category": "ikan"},
+                ]
+            ],
+            "documents": [["wrong", "right"]],
+        }
+        service = make_service(mock_settings, embedder=mock_embedder, collection=collection)
+
+        results = service.retrieve("ikan kembung")
+
+        assert results[0].name == "Ikan oci, kembung, segar"
+
+    def test_candidate_pool_is_at_least_requested_top_k(
+        self,
+        mock_settings: MagicMock,
+        mock_embedder: MagicMock,
+        mock_collection: MagicMock,
+    ) -> None:
+        service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
+        service.retrieve("nasi", top_k=25)
+
+        assert mock_collection.query.call_args.kwargs["n_results"] == 25
 
     def test_returns_list_of_retrieved_food(
         self,
@@ -202,7 +246,7 @@ class TestRetrieve:
     ) -> None:
         service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
         results = service.retrieve("nasi putih")
-        assert len(results) == 3
+        assert len(results) == 2
         assert all(isinstance(r, RetrievedFood) for r in results)
 
     def test_maps_metadata_and_distance(
@@ -228,7 +272,7 @@ class TestRetrieve:
     ) -> None:
         service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
         results = service.retrieve("ayam goreng")
-        assert results[2].gi_value is None
+        assert results[0].gi_value is None
 
     def test_returns_empty_when_collection_has_no_hits(
         self,
@@ -245,15 +289,17 @@ class TestRetrieve:
         service = make_service(mock_settings, embedder=mock_embedder, collection=empty_collection)
         assert service.retrieve("xyzzy nonsense query") == []
 
-    def test_respects_custom_top_k(
+    def test_custom_top_k_remains_the_return_limit(
         self,
         mock_settings: MagicMock,
         mock_embedder: MagicMock,
         mock_collection: MagicMock,
     ) -> None:
         service = make_service(mock_settings, embedder=mock_embedder, collection=mock_collection)
-        service.retrieve("nasi", top_k=2)
-        assert mock_collection.query.call_args.kwargs["n_results"] == 2
+        results = service.retrieve("nasi", top_k=2)
+
+        assert len(results) <= 2
+        assert mock_collection.query.call_args.kwargs["n_results"] >= 2
 
     def test_passes_optional_where_filter(
         self,
