@@ -8,22 +8,22 @@
 #                  -f docker-compose.external-postgres.yml up -d
 #
 # This override:
-#   - removes the app's dependency on the bundled `postgres` service;
+#   - drops the bundled `postgres` service (`!reset`);
+#   - removes the app's dependency on it (`depends_on: !reset []`);
 #   - attaches the app to an existing external Docker network so it can reach
 #     the external database by name.
 #
-# To also drop the bundled postgres service entirely, disable its profile:
-#   COMPOSE_PROFILES= docker compose ... (the `postgres` service stays defined
-#   but unused when the app no longer depends on it).
-#
 # No application code changes are required — only environment/override files.
+# `!reset` / `!override` require Docker Compose v2.24+.
 
 services:
   app:
-    depends_on: {}
+    depends_on: !reset []
     networks:
       - default
       - external_db
+
+  postgres: !reset null
 
 networks:
   external_db:

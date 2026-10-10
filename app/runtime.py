@@ -134,9 +134,9 @@ class AppRuntime:
         """
         loop = asyncio.get_running_loop()
 
-        def schedule(update: TelegramUpdate) -> None:
+        async def schedule(update: TelegramUpdate) -> None:
             future = asyncio.run_coroutine_threadsafe(on_update(update), loop)
-            future.result()
+            await asyncio.wrap_future(future)
 
         await asyncio.to_thread(self._telegram_svc.start_polling, schedule)
 
