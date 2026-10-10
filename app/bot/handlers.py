@@ -185,10 +185,11 @@ class TelegramUpdateHandler:
             await self._send(update.chat_id, "Analisis tidak berlaku.")
             return
 
+        message_id = update.message_id
         if action == "confirm_ya":
-            await self._handle_confirm_ya(update.chat_id, pending_id)
+            await self._handle_confirm_ya(update.chat_id, pending_id, message_id)
         elif action == "confirm_tidak":
-            await self._handle_confirm_tidak(update.chat_id, pending_id)
+            await self._handle_confirm_tidak(update.chat_id, pending_id, message_id)
         else:
             await self._send(update.chat_id, "Analisis tidak berlaku.")
 
@@ -392,7 +393,9 @@ class TelegramUpdateHandler:
     # Callback handlers
     # ------------------------------------------------------------------
 
-    async def _handle_confirm_ya(self, chat_id: int, pending_id: UUID) -> None:
+    async def _handle_confirm_ya(
+        self, chat_id: int, pending_id: UUID, message_id: int | None = None
+    ) -> None:
         """Log a confirmed consumption, reducing the balance exactly once."""
         try:
             status, record, warned = await self._energy_svc.confirm_consumption(chat_id, pending_id)
@@ -422,7 +425,14 @@ class TelegramUpdateHandler:
                 chat_id, "Analisis sudah tidak berlaku. Kirim makanan baru untuk analisis."
             )
 
-    async def _handle_confirm_tidak(self, chat_id: int, pending_id: UUID) -> None:
+        if message_id is not None:
+            await self._telegram_svc.edit_message_reply_markup(
+                chat_id, message_id, inline_keyboard=[]
+            )
+
+    async def _handle_confirm_tidak(
+        self, chat_id: int, pending_id: UUID, message_id: int | None = None
+    ) -> None:
         """Decline a consumption: no balance change, no log row."""
         try:
             status = await self._energy_svc.decline_consumption(chat_id, pending_id)
@@ -437,6 +447,11 @@ class TelegramUpdateHandler:
             )
         else:
             await self._telegram_svc.send_message(chat_id, "Baik, tidak dicatat.")
+
+        if message_id is not None:
+            await self._telegram_svc.edit_message_reply_markup(
+                chat_id, message_id, inline_keyboard=[]
+            )
 
     # ------------------------------------------------------------------
     # IDLE helper
