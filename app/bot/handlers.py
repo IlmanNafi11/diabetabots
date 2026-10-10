@@ -395,9 +395,7 @@ class TelegramUpdateHandler:
     async def _handle_confirm_ya(self, chat_id: int, pending_id: UUID) -> None:
         """Log a confirmed consumption, reducing the balance exactly once."""
         try:
-            status, record, warned = await self._energy_svc.confirm_consumption(
-                chat_id, pending_id
-            )
+            status, record, warned = await self._energy_svc.confirm_consumption(chat_id, pending_id)
         except SQLAlchemyError as exc:
             log.exception("Ya confirm failed: %s", exc)
             await self._telegram_svc.send_message(chat_id, "Maaf, gagal menyimpan. Coba lagi.")

@@ -89,19 +89,21 @@ class TestConfirmConsumption:
             energi_kkal=200.0,
         )
 
-        status, record, warned = await service.confirm_consumption(
-            user_3.telegram_id, pending.id
-        )
+        status, record, warned = await service.confirm_consumption(user_3.telegram_id, pending.id)
 
         assert status is ConfirmationStatus.CONFIRMED
         assert record is not None
         assert record.sisa_energi_kkal == pytest.approx(1800.0)
         assert warned is False
         logs = (
-            await async_session.execute(
-                select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+            (
+                await async_session.execute(
+                    select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(logs) == 1
 
     async def test_confirm_marks_pending_resolved(
@@ -141,10 +143,14 @@ class TestConfirmConsumption:
         assert record is not None
         assert record.sisa_energi_kkal == pytest.approx(1920.0)
         logs = (
-            await async_session.execute(
-                select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+            (
+                await async_session.execute(
+                    select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(logs) == 1
 
     async def test_confirm_unknown_pending_is_not_found(
@@ -177,10 +183,14 @@ class TestConfirmConsumption:
         assert status is ConfirmationStatus.STALE
         assert record is None
         logs = (
-            await async_session.execute(
-                select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+            (
+                await async_session.execute(
+                    select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert logs == []
 
     async def test_confirm_warns_when_negative(self, service: EnergyService, user_3: User) -> None:
@@ -219,10 +229,14 @@ class TestDeclineConsumption:
         assert today is not None
         assert today.sisa_energi_kkal == pytest.approx(2000.0)
         logs = (
-            await async_session.execute(
-                select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+            (
+                await async_session.execute(
+                    select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_3.telegram_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert logs == []
         refreshed = await service.get_pending(user_3.telegram_id, pending.id)
         assert refreshed is not None and refreshed.resolved is True
