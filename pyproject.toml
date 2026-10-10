@@ -20,3 +20,6 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/services/llm_service.py" = ["E501"]  # prompt templates are inherently >100 chars

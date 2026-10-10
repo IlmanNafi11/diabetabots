@@ -70,6 +70,22 @@ class RetrievedFood:
     text_snippet:
         The full text that was embedded and stored in ChromaDB.
         Alias: ``page_content`` — LangChain Document compatibility.
+    energi_per_100g:
+        Energy in kcal per 100 g edible portion, or ``None``.
+    protein_per_100g:
+        Protein in g per 100 g edible portion, or ``None``.
+    lemak_per_100g:
+        Fat in g per 100 g edible portion, or ``None``.
+    karbohidrat_per_100g:
+        Carbohydrate in g per 100 g edible portion, or ``None``.
+    serat_per_100g:
+        Dietary fibre in g per 100 g edible portion, or ``None``.
+    gl_value:
+        Per-serving glycemic load source value, or ``None``.
+    serving_size_g:
+        Serving size in grams (for GL computation), or ``None``.
+    bdd:
+        Bahan yang Dapat Dimakan (0-100 %); ``None`` means 100 %.
     """
 
     record_id: str
@@ -78,6 +94,14 @@ class RetrievedFood:
     gi_value: float | None
     distance: float
     text_snippet: str
+    energi_per_100g: float | None = None
+    protein_per_100g: float | None = None
+    lemak_per_100g: float | None = None
+    karbohidrat_per_100g: float | None = None
+    serat_per_100g: float | None = None
+    gl_value: float | None = None
+    serving_size_g: float | None = None
+    bdd: float | None = None
 
     @property
     def page_content(self) -> str:
@@ -238,6 +262,14 @@ def build_retrieved_foods(query_result: dict[str, Any]) -> list[RetrievedFood]:
                 gi_value=_maybe_float(meta.get("gi_value")),
                 distance=distances[i],
                 text_snippet=documents[i],
+                energi_per_100g=_maybe_float(meta.get("energi")),
+                protein_per_100g=_maybe_float(meta.get("protein")),
+                lemak_per_100g=_maybe_float(meta.get("lemak")),
+                karbohidrat_per_100g=_maybe_float(meta.get("karbohidrat")),
+                serat_per_100g=_maybe_float(meta.get("serat")),
+                gl_value=_maybe_float(meta.get("gl_value")),
+                serving_size_g=_maybe_float(meta.get("serving_size_g")),
+                bdd=_maybe_float(meta.get("bdd")),
             )
         )
     return foods
