@@ -10,7 +10,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import DailyEnergy, User
+from app.models.models import ConsumptionLog, DailyEnergy, User
 
 WIB = timezone(timedelta(hours=7), name="Asia/Jakarta")
 
@@ -148,3 +148,38 @@ class EnergyService:
         if user is None:
             raise UserNotRegisteredError(f"telegram_id {telegram_id} is not registered")
         return user
+
+    async def record_consumption(
+        self,
+        telegram_id: int,
+        *,
+        nama_pangan: str,
+        gram: float,
+        energi_kkal: float,
+        gl_aktual: float | None = None,
+        analysis_message_id: int | None = None,
+        now: datetime | None = None,
+    ) -> tuple[DailyEnergy, ConsumptionLog]:
+        """Record a confirmed consumption ("Ya") and decrement the balance once.
+
+        Writes a :class:`ConsumptionLog` row and applies the single balance
+        reduction in one commit, so a confirmed consumption is never logged
+        without its energy being subtracted (SPEC energy-tracking task-13).
+        Callers gate this behind ``pending_analyses.resolved`` so a double tap
+        cannot record twice.
+        """
+        user = await self._require_user(telegram_id)
+        record = await self._ensure_for_date(telegram_id, user.tdee_kkal, wib_today(now))
+
+        record.sisa_energi_kkal = round(record.sisa_energi_kkal - energi_kkal, 2)
+        log = ConsumptionLog(
+            telegram_id=telegram_id,
+            nama_pangan=nama_pangan,
+            gram=round(gram, 2),
+            energi_kkal=round(energi_kkal, 2),
+            gl_aktual=gl_aktual,
+            analysis_message_id=analysis_message_id,
+        )
+        self._session.add(log)
+        await self._session.commit()
+        return record, log

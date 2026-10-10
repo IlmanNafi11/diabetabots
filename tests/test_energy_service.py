@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import DailyEnergy, User
+from app.models.models import ConsumptionLog, DailyEnergy, User
 from app.services.energy_service import (
     EnergyService,
     InsufficientEnergyError,
@@ -116,3 +116,92 @@ class TestGetToday:
         record = await service.get_today(user_1.telegram_id)
         assert record is not None
         assert record.sisa_energi_kkal == pytest.approx(2000.0)
+
+
+class TestRecordConsumption:
+    """``record_consumption`` — atomic ConsumptionLog insert + single decrement.
+
+    The "Ya" button is the only path that writes a ``consumption_log`` row, and
+    it must reduce the balance exactly once (SPEC energy-tracking task-13).
+    """
+
+    async def test_records_log_and_decrements_once(
+        self, service: EnergyService, user_1: User
+    ) -> None:
+        await service.ensure_today(user_1.telegram_id, user_1.tdee_kkal)
+
+        record, log = await service.record_consumption(
+            user_1.telegram_id,
+            nama_pangan="Nasi Goreng",
+            gram=150.0,
+            energi_kkal=200.0,
+        )
+
+        assert record.sisa_energi_kkal == pytest.approx(1800.0)
+        assert log.telegram_id == user_1.telegram_id
+        assert log.nama_pangan == "Nasi Goreng"
+        assert log.gram == pytest.approx(150.0)
+        assert log.energi_kkal == pytest.approx(200.0)
+
+    async def test_log_row_is_persisted(
+        self, service: EnergyService, user_1: User, async_session: AsyncSession
+    ) -> None:
+        from sqlalchemy import select
+
+        await service.ensure_today(user_1.telegram_id, user_1.tdee_kkal)
+        await service.record_consumption(
+            user_1.telegram_id,
+            nama_pangan="Tahu",
+            gram=100.0,
+            energi_kkal=80.0,
+        )
+
+        result = await async_session.execute(
+            select(ConsumptionLog).where(ConsumptionLog.telegram_id == user_1.telegram_id)
+        )
+        rows = result.scalars().all()
+        assert len(rows) == 1
+        assert rows[0].nama_pangan == "Tahu"
+
+    async def test_warns_when_balance_goes_negative(
+        self, service: EnergyService, user_1: User
+    ) -> None:
+        await service.ensure_today(user_1.telegram_id, user_1.tdee_kkal)
+
+        record, _ = await service.record_consumption(
+            user_1.telegram_id,
+            nama_pangan="Kue",
+            gram=500.0,
+            energi_kkal=2500.0,
+        )
+
+        assert record.sisa_energi_kkal == pytest.approx(-500.0)
+
+    async def test_gl_aktual_stored_when_provided(
+        self, service: EnergyService, user_1: User
+    ) -> None:
+        await service.ensure_today(user_1.telegram_id, user_1.tdee_kkal)
+
+        _, log = await service.record_consumption(
+            user_1.telegram_id,
+            nama_pangan="Nasi Putih",
+            gram=150.0,
+            energi_kkal=270.0,
+            gl_aktual=30.77,
+        )
+
+        assert log.gl_aktual == pytest.approx(30.77)
+
+    async def test_two_confirmations_log_twice_and_decrement_twice(
+        self, service: EnergyService, user_1: User
+    ) -> None:
+        await service.ensure_today(user_1.telegram_id, user_1.tdee_kkal)
+
+        await service.record_consumption(
+            user_1.telegram_id, nama_pangan="A", gram=10.0, energi_kkal=100.0
+        )
+        record, _ = await service.record_consumption(
+            user_1.telegram_id, nama_pangan="B", gram=10.0, energi_kkal=100.0
+        )
+
+        assert record.sisa_energi_kkal == pytest.approx(1800.0)
