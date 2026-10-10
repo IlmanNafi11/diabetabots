@@ -170,6 +170,15 @@ class TestTelegramServiceGetUpdates:
             assert updates[0].update_id == 1
             assert updates[0].text == "hello"
 
+    def test_http_read_timeout_exceeds_long_poll_timeout(self, mock_settings: MagicMock) -> None:
+        with patch("httpx.Client") as mock_client:
+            from app.services.telegram_service import TelegramService
+
+            TelegramService(settings=mock_settings)
+
+            timeout = mock_client.call_args.kwargs["timeout"]
+            assert timeout.read > 55
+
     @pytest.mark.asyncio()
     async def test_fetch_updates_empty_result(self, mock_settings: MagicMock) -> None:
         with patch("httpx.Client") as mock_client:
