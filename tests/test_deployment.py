@@ -37,7 +37,9 @@ def test_dockerfile_runs_as_non_root_and_exposes_healthcheck() -> None:
     assert "USER appuser" in dockerfile
     assert "EXPOSE 8000" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    assert 'CMD ["uvicorn", "app.main:app"' in dockerfile
+    # The production entrypoint must use the runtime factory, otherwise the
+    # Telegram polling loop and reset scheduler never start (task-14).
+    assert '"--factory", "app.main:create_production_app"' in dockerfile
 
 
 def test_compose_mode_a_contains_app_postgres_and_persistent_volumes() -> None:
@@ -52,9 +54,10 @@ def test_compose_mode_a_contains_app_postgres_and_persistent_volumes() -> None:
     assert "healthcheck:" in compose
 
 
-def test_external_postgres_override_removes_local_dependency_and_uses_external_network() -> None:
+def test_external_postgres_override_removes_local_dependency_and_service() -> None:
     override = (ROOT / "docker-compose.external-postgres.yml").read_text()
 
-    assert "depends_on: {}" in override
+    assert "depends_on: !reset []" in override
+    assert "postgres: !reset null" in override
     assert "external: true" in override
     assert "${EXTERNAL_NETWORK:?EXTERNAL_NETWORK must be set}" in override
