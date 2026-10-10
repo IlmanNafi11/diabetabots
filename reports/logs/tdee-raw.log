@@ -1,0 +1,36 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /home/agentuser/projects/diabetabots/.venv/bin/python3.11
+cachedir: .pytest_cache
+rootdir: /home/agentuser/projects/diabetabots
+configfile: pyproject.toml
+plugins: anyio-4.15.1, cov-7.1.0, asyncio-1.4.0, langsmith-0.14.7
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 25 items
+
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P1] PASSED [  4%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P2] PASSED [  8%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P3] PASSED [ 12%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P4] PASSED [ 16%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P5] PASSED [ 20%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P6] PASSED [ 24%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P7] PASSED [ 28%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_tdee_within_0_5_percent[P8] PASSED [ 32%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P1] PASSED [ 36%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P2] PASSED [ 40%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P3] PASSED [ 44%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P4] PASSED [ 48%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P5] PASSED [ 52%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P6] PASSED [ 56%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P7] PASSED [ 60%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_persists_user_row[P8] PASSED [ 64%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P1] PASSED [ 68%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P2] PASSED [ 72%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P3] PASSED [ 76%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P4] PASSED [ 80%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P5] PASSED [ 84%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P6] PASSED [ 88%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P7] PASSED [ 92%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_registration_upsert_idempotent[P8] PASSED [ 96%]
+tests/test_integration/test_tdee_8profiles.py::TestTdee8Profiles::test_conversation_to_tdee_pipeline PASSED [100%]
+
+============================== 25 passed in 1.30s ==============================
