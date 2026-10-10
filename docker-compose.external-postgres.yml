@@ -1,0 +1,31 @@
+# Mode B — PostgreSQL already running outside this compose project (D13).
+#
+# Usage:
+#   export EXTERNAL_NETWORK=<name-of-the-external-docker-network>
+#   # point DATABASE_URL at the external host in .env, e.g.
+#   #   DATABASE_URL=postgresql+asyncpg://user:pass@db-host:5432/diabetabot
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.external-postgres.yml up -d
+#
+# This override:
+#   - removes the app's dependency on the bundled `postgres` service;
+#   - attaches the app to an existing external Docker network so it can reach
+#     the external database by name.
+#
+# To also drop the bundled postgres service entirely, disable its profile:
+#   COMPOSE_PROFILES= docker compose ... (the `postgres` service stays defined
+#   but unused when the app no longer depends on it).
+#
+# No application code changes are required — only environment/override files.
+
+services:
+  app:
+    depends_on: {}
+    networks:
+      - default
+      - external_db
+
+networks:
+  external_db:
+    external: true
+    name: ${EXTERNAL_NETWORK:?EXTERNAL_NETWORK must be set}
