@@ -176,8 +176,10 @@ def format_food_context(foods: list[RetrievedFood], gram: float) -> str:
         # (graceful degradation for entries indexed before nutrition metadata was added)
         if food.energi_per_100g is not None:
             energi = nutrition_for_gram(food.energi_per_100g, gram, bdd)  # type: ignore[arg-type]
+            energi_per_100g = food.energi_per_100g
         else:
             energi = "tidak tersedia"
+            energi_per_100g = "tidak tersedia"
         if food.protein_per_100g is not None:
             protein = nutrition_for_gram(food.protein_per_100g, gram, bdd)  # type: ignore[arg-type]
         else:
@@ -213,7 +215,7 @@ def format_food_context(foods: list[RetrievedFood], gram: float) -> str:
 
         line = (
             f"- {food.name} ({food.category}): "
-            f"Energi {energi} kkal/100g→{energi} kkal untuk {gram}g, "
+            f"Energi {energi_per_100g} kkal/100g→{energi} kkal untuk {gram}g, "
             f"Protein {protein}g, Lemak {lemak}g, Karbohidrat {karbo}g, Serat {serat}g; "
             f"{gi_str}; {', '.join(gl_parts)}"
         )

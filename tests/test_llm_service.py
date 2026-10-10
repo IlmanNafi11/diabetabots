@@ -201,6 +201,20 @@ class TestFormatFoodContext:
         # 130 kkal/100g * 150g / 100 = 195 kkal
         assert "195" in context
 
+    def test_distinguishes_per_100g_source_from_bdd_adjusted_portion(self) -> None:
+        """The source label must not repeat the BDD-adjusted portion value."""
+        foods = [
+            make_retrieved_food(
+                name="Semangka, segar",
+                energi_per_100g=28.0,
+                bdd=46.0,
+            )
+        ]
+
+        context = format_food_context(foods, gram=200)
+
+        assert "Energi 28.0 kkal/100g→25.76 kkal untuk 200g" in context
+
     def test_includes_gi_when_available(self) -> None:
         """GI value must appear in context when the food has it."""
         foods = [make_retrieved_food(gi_value=73.0)]
