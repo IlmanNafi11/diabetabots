@@ -438,9 +438,7 @@ class TestCallbackQueries:
         mock_energy_svc: AsyncMock,
     ) -> None:
         pending_id = UUID(int=1)
-        update = _make_callback_update(
-            data=f"confirm_ya:{pending_id}", update_id=9, message_id=11
-        )
+        update = _make_callback_update(data=f"confirm_ya:{pending_id}", update_id=9, message_id=11)
 
         await handler.handle_update(update)
 
@@ -477,9 +475,7 @@ class TestCallbackQueries:
             return_value=(ConfirmationStatus.ALREADY_RESOLVED, None, False)
         )
         pending_id = UUID(int=1)
-        update = _make_callback_update(
-            data=f"confirm_ya:{pending_id}", update_id=11, message_id=13
-        )
+        update = _make_callback_update(data=f"confirm_ya:{pending_id}", update_id=11, message_id=13)
 
         await handler.handle_update(update)
 
