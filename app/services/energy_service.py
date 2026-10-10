@@ -28,6 +28,7 @@ class ConfirmationStatus(StrEnum):
     STALE = "stale"
     NOT_FOUND = "not_found"
 
+
 WIB = timezone(timedelta(hours=7), name="Asia/Jakarta")
 
 
@@ -137,6 +138,41 @@ class EnergyService:
         """
         return await self._ensure_for_date(telegram_id, tdee_kkal, wib_date)
 
+    async def reset_all_for_date(self, *, wib_date: date | None = None) -> int:
+        """Pre-seed a WIB date's row for every registered user (scheduler tick).
+
+        Idempotent by ``(telegram_id, tanggal_wib)``: users who already have a
+        row for ``wib_date`` are left untouched, so a tick that fires twice (or
+        a lazy ``ensure_today`` that beat the scheduler) never re-seeds a
+        balance. Returns the number of rows created.
+        """
+        target = wib_date or wib_today()
+        result = await self._session.execute(select(User))
+        users = result.scalars().all()
+
+        created = 0
+        for user in users:
+            existing = await self._session.execute(
+                select(DailyEnergy).where(
+                    DailyEnergy.telegram_id == user.telegram_id,
+                    DailyEnergy.tanggal_wib == target,
+                )
+            )
+            if existing.scalar_one_or_none() is not None:
+                continue
+            self._session.add(
+                DailyEnergy(
+                    telegram_id=user.telegram_id,
+                    tanggal_wib=target,
+                    sisa_energi_kkal=user.tdee_kkal,
+                )
+            )
+            created += 1
+
+        if created:
+            await self._session.commit()
+        return created
+
     async def _ensure_for_date(
         self, telegram_id: int, tdee_kkal: float, wib_date: date
     ) -> DailyEnergy:
@@ -235,9 +271,7 @@ class EnergyService:
         await self._session.commit()
         return pending
 
-    async def get_pending(
-        self, telegram_id: int, pending_id: UUID
-    ) -> PendingAnalyses | None:
+    async def get_pending(self, telegram_id: int, pending_id: UUID) -> PendingAnalyses | None:
         """Return a pending analysis row for ``telegram_id``, or ``None``."""
         result = await self._session.execute(
             select(PendingAnalyses).where(
