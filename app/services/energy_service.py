@@ -6,11 +6,27 @@ seeds ``sisa = TDEE``; re-running the same day never re-seeds.
 """
 
 from datetime import UTC, date, datetime, timedelta, timezone
+from enum import StrEnum
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import ConsumptionLog, DailyEnergy, User
+from app.models.models import ConsumptionLog, DailyEnergy, PendingAnalyses, User
+
+
+class ConfirmationStatus(StrEnum):
+    """Outcome of an inline "Ya"/"Tidak" confirmation callback.
+
+    ``STALE`` is a callback from a previous WIB day (PRD §8.1: cross-day
+    callbacks are rejected); ``ALREADY_RESOLVED`` covers a double tap.
+    """
+
+    CONFIRMED = "confirmed"
+    DECLINED = "declined"
+    ALREADY_RESOLVED = "already_resolved"
+    STALE = "stale"
+    NOT_FOUND = "not_found"
 
 WIB = timezone(timedelta(hours=7), name="Asia/Jakarta")
 
@@ -183,3 +199,103 @@ class EnergyService:
         self._session.add(log)
         await self._session.commit()
         return record, log
+
+    # ------------------------------------------------------------------
+    # Inline "Ya"/"Tidak" confirmation (task-13)
+    # ------------------------------------------------------------------
+
+    async def create_pending(
+        self,
+        telegram_id: int,
+        *,
+        nama_pangan: str,
+        gram: float,
+        energi_kkal: float,
+        gl_aktual: float | None = None,
+        now: datetime | None = None,
+    ) -> PendingAnalyses:
+        """Persist the verified payload behind an analysis message's buttons.
+
+        The row's ``id`` is embedded in the callback data so a tap always
+        resolves against the numbers that were shown, never a re-derivation
+        (PRD §8.1: "nilai terverifikasi"). ``tanggal_wib`` stamps the day the
+        analysis was produced so cross-day callbacks can be rejected.
+        """
+        await self._require_user(telegram_id)
+        pending = PendingAnalyses(
+            telegram_id=telegram_id,
+            nama_pangan=nama_pangan,
+            gram=round(gram, 2),
+            energi_kkal=round(energi_kkal, 2),
+            gl_aktual=gl_aktual,
+            tanggal_wib=wib_today(now),
+            resolved=False,
+        )
+        self._session.add(pending)
+        await self._session.commit()
+        return pending
+
+    async def get_pending(
+        self, telegram_id: int, pending_id: UUID
+    ) -> PendingAnalyses | None:
+        """Return a pending analysis row for ``telegram_id``, or ``None``."""
+        result = await self._session.execute(
+            select(PendingAnalyses).where(
+                PendingAnalyses.id == pending_id,
+                PendingAnalyses.telegram_id == telegram_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def confirm_consumption(
+        self,
+        telegram_id: int,
+        pending_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[ConfirmationStatus, DailyEnergy | None, bool]:
+        """Resolve a "Ya" tap: log the consumption and reduce the balance once.
+
+        Returns ``(status, record, warned)``. ``record`` is ``None`` unless the
+        status is ``CONFIRMED``. Idempotent via ``pending_analyses.resolved``;
+        cross-day callbacks return ``STALE`` without touching the balance.
+        """
+        pending = await self.get_pending(telegram_id, pending_id)
+        if pending is None:
+            return ConfirmationStatus.NOT_FOUND, None, False
+        if pending.resolved:
+            return ConfirmationStatus.ALREADY_RESOLVED, None, False
+        if pending.tanggal_wib != wib_today(now):
+            return ConfirmationStatus.STALE, None, False
+
+        record, _log = await self.record_consumption(
+            telegram_id,
+            nama_pangan=pending.nama_pangan,
+            gram=pending.gram,
+            energi_kkal=pending.energi_kkal,
+            gl_aktual=pending.gl_aktual,
+            now=now,
+        )
+        pending.resolved = True
+        await self._session.commit()
+        return ConfirmationStatus.CONFIRMED, record, record.sisa_energi_kkal < 0
+
+    async def decline_consumption(
+        self,
+        telegram_id: int,
+        pending_id: UUID,
+        *,
+        now: datetime | None = None,
+    ) -> ConfirmationStatus:
+        """Resolve a "Tidak" tap: mark resolved without any balance change."""
+        pending = await self.get_pending(telegram_id, pending_id)
+        if pending is None:
+            return ConfirmationStatus.NOT_FOUND
+        if pending.resolved:
+            return ConfirmationStatus.ALREADY_RESOLVED
+        if pending.tanggal_wib != wib_today(now):
+            return ConfirmationStatus.STALE
+
+        pending.resolved = True
+        await self._session.commit()
+        return ConfirmationStatus.DECLINED
