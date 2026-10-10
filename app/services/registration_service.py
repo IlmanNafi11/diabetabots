@@ -60,9 +60,7 @@ class RegistrationService:
         tdee = calculate_tdee(bmr, pal)
 
         # Attempt to find an existing row
-        result = await self._session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
+        result = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         existing: User | None = result.scalar_one_or_none()
 
         if existing is not None:
@@ -94,7 +92,5 @@ class RegistrationService:
 
     async def get_user(self, telegram_id: int) -> User | None:
         """Return the User row for ``telegram_id``, or ``None`` if not registered."""
-        result = await self._session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
+        result = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalar_one_or_none()

@@ -400,6 +400,50 @@ class TestFoodQuery:
         assert handler._conversation_manager.get(12345).state is ConversationState.CONFIRMED
 
     @pytest.mark.asyncio()
+    async def test_energy_persisted_applies_bdd_edible_portion(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        """Stored energy must scale by BDD (edible portion), not per-100g alone.
+
+        Scenario #10: TKPI declares "Buah naga merah, segar" at 71.0 kkal/100g
+        with BDD 66.5%, so 100 g eaten yields round(71.0 * 100 * 66.5 / 100 / 100, 2)
+        = 47.22 kkal — not 71.0.
+        """
+        handler._conversation_manager.start_registration(12345)
+        handler._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler._conversation_manager.accept_age(12345, 25)
+        handler._conversation_manager.accept_weight(12345, 70.0)
+        handler._conversation_manager.accept_height(12345, 175.0)
+        handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+
+        mock_rag_svc.retrieve.return_value = [
+            RetrievedFood(
+                record_id="doc-bdd-1",
+                name="Buah naga merah, segar",
+                category="Buah",
+                gi_value=None,
+                energi_per_100g=71.0,
+                bdd=66.5,
+                distance=0.02,
+                text_snippet="Buah naga merah: energi 71 kkal/100g",
+            )
+        ]
+        mock_energy_record = MagicMock()
+        mock_energy_record.sisa_energi_kkal = 2000.0
+        mock_energy_svc.ensure_today = AsyncMock(return_value=mock_energy_record)
+
+        await handler.handle_update(_make_message_update(text="buah naga merah 100g", update_id=13))
+
+        mock_energy_svc.create_pending.assert_awaited_once()
+        assert mock_energy_svc.create_pending.call_args.kwargs["energi_kkal"] == pytest.approx(
+            47.22
+        )
+
+    @pytest.mark.asyncio()
     async def test_gram_clarify_for_non_numeric_portion(
         self, handler: TelegramUpdateHandler, mock_telegram_svc: AsyncMock
     ) -> None:
