@@ -424,6 +424,29 @@ class TestFoodQuery:
         conv = handler._conversation_manager.get(12345)
         assert conv.state is ConversationState.AWAIT_GRAM_CLARIFY
 
+    @pytest.mark.asyncio()
+    async def test_unavailable_food_sends_not_found_without_analysis(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_llm_svc: AsyncMock,
+    ) -> None:
+        handler._conversation_manager.start_registration(12345)
+        handler._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler._conversation_manager.accept_age(12345, 25)
+        handler._conversation_manager.accept_weight(12345, 70.0)
+        handler._conversation_manager.accept_height(12345, 175.0)
+        handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+        mock_rag_svc.retrieve.return_value = []
+
+        await handler.handle_update(_make_message_update(text="sayur aster 100g", update_id=9))
+
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "Tidak ditemukan" in text
+        mock_llm_svc.analyze_food.assert_not_awaited()
+        mock_telegram_svc.send_message_with_inline_buttons.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # Callback query — Ya / Tidak
