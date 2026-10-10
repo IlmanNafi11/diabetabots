@@ -36,7 +36,7 @@ from app.bot.validators import (
 )
 from app.services.energy_service import ConfirmationStatus, EnergyService
 from app.services.llm_service import LLMService, UserProfile
-from app.services.nutrition_service import glycemic_load
+from app.services.nutrition_service import glycemic_load, nutrition_for_gram
 from app.services.rag_service import RAGService
 from app.services.registration_service import RegistrationService
 from app.services.telegram_service import TelegramService, TelegramUpdate, TelegramUpdateType
@@ -354,11 +354,15 @@ class TelegramUpdateHandler:
             analysis_text = result.narrative
 
             # Compute the verified energy/GL payload from TKPI data. The LLM
-            # narrative is never the source for callback arithmetic.
+            # narrative is never the source for callback arithmetic. TKPI
+            # nutrition is declared per 100 g of edible portion (BDD); scale the
+            # eaten gram by the BDD percentage so the stored figure matches the
+            # actual consumed nutrient mass (SPEC §5.3).
             first_food = retrieved[0]
             energi_kkal = None
             if first_food.energi_per_100g is not None:
-                energi_kkal = round(first_food.energi_per_100g * gram / 100, 2)
+                bdd = first_food.bdd if first_food.bdd is not None else 100.0
+                energi_kkal = nutrition_for_gram(first_food.energi_per_100g, gram, bdd)
             if energi_kkal is None:
                 await self._send(
                     chat_id,

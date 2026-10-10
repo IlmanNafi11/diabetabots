@@ -4,7 +4,7 @@ End-to-end pipeline: conversation state → registration profile → BMR/TDEE
 calculation → User row upsert → TDEE accuracy verified.
 
 Reference TDEE values are calculated from the Mifflin-St Jeor formula (BMR =
-10·BB + 6.25·TB − 5·Usia + 5 [L] / −161 [P]; TDEE = round(BMR × PAL, 2))
+10·BB + 6.25·TB - 5·Usia + 5 [L] / -161 [P]; TDEE = round(BMR x PAL, 2))
 and match the values documented in PRD §4.
 
 This test requires a real (or test) PostgreSQL database; it uses the same
@@ -25,10 +25,10 @@ from app.models.models import ActivityLevel, Gender, User
 from app.services.registration_service import RegistrationService
 from app.services.tdee_service import calculate_bmr, calculate_tdee, pal_for_activity
 
-
 # ---------------------------------------------------------------------------
 # 8 PRD simulation profiles (PRD §4)
 # ---------------------------------------------------------------------------
+
 
 @dataclass(frozen=True, slots=True)
 class Profile:
@@ -65,6 +65,7 @@ PROFILES: list[Profile] = [
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest_asyncio.fixture()
 async def registration_service(async_session: AsyncSession) -> RegistrationService:
     return RegistrationService(async_session)
@@ -90,6 +91,7 @@ def tdee_error_pct(computed: float, reference: float) -> float:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio()
 class TestTdee8Profiles:
@@ -135,11 +137,11 @@ class TestTdee8Profiles:
         )
 
         # Verify the row exists and fields match
-        result = await async_session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
+        result = await async_session.execute(select(User).where(User.telegram_id == telegram_id))
         user: User | None = result.scalar_one_or_none()
-        assert user is not None, f"[{profile.label}] User row not found for telegram_id={telegram_id}"
+        assert user is not None, (
+            f"[{profile.label}] User row not found for telegram_id={telegram_id}"
+        )
 
         assert user.jenis_kelamin == profile.gender
         assert user.usia_tahun == profile.age
@@ -148,7 +150,9 @@ class TestTdee8Profiles:
         assert user.tingkat_aktivitas == profile.activity
         assert user.pal == pytest.approx(pal_for_activity(profile.activity))
 
-        expected_bmr = calculate_bmr(profile.weight_kg, profile.height_cm, profile.age, profile.gender)
+        expected_bmr = calculate_bmr(
+            profile.weight_kg, profile.height_cm, profile.age, profile.gender
+        )
         expected_tdee = calculate_tdee(expected_bmr, pal_for_activity(profile.activity))
         assert user.bmr_kkal == pytest.approx(expected_bmr)
         assert user.tdee_kkal == pytest.approx(expected_tdee)
@@ -184,9 +188,7 @@ class TestTdee8Profiles:
         )
         await async_session.commit()
 
-        result = await async_session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
+        result = await async_session.execute(select(User).where(User.telegram_id == telegram_id))
         users = result.scalars().all()
         assert len(users) == 1, (
             f"[{profile.label}] Expected 1 User row after upsert, got {len(users)}"
@@ -240,9 +242,7 @@ class TestTdee8Profiles:
         )
 
         # Verify
-        result = await async_session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
+        result = await async_session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
         assert user is not None
         assert user.tdee_kkal == pytest.approx(profile.reference_tdee, rel=0.005)
