@@ -43,6 +43,8 @@ class FoodRecord:
     record_id: str
     name: str
     category: str
+    bdd: float | None = None  # Bahan yang Dapat Dimakan (0-100%)
+    serving_size_g: float | None = None
     nutrients: dict[str, float] = field(default_factory=dict)
     gi_value: float | None = None
     gl_value: float | None = None
@@ -66,19 +68,20 @@ def load_records(path: Path) -> list[FoodRecord]:
             if not line.strip():
                 continue
             raw = json.loads(line)
-            nutrients = {
-                field_name: float(raw[field_name])
-                for field_name in NUTRIENT_FIELDS
-                if raw.get(field_name) not in (None, "")
-            }
             records.append(
                 FoodRecord(
                     record_id=f"food-{index:04d}",
                     name=str(raw["Nama Bahan Pangan"]).replace("\n", " ").strip(),
                     category=str(raw["Kategori"]),
-                    nutrients=nutrients,
+                    nutrients={
+                        field_name: float(raw[field_name])
+                        for field_name in NUTRIENT_FIELDS
+                        if raw.get(field_name) not in (None, "")
+                    },
                     gi_value=_optional_float(raw.get("gi_value")),
                     gl_value=_optional_float(raw.get("gl_value")),
+                    serving_size_g=_optional_float(raw.get("serving_size_g")),
+                    bdd=_optional_float(raw.get("BDD")),
                 )
             )
     return records

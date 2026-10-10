@@ -105,18 +105,32 @@ def build_documents(records: Sequence[FoodRecord], strategy: str) -> list[IndexD
         supported = ", ".join(CHUNKING_STRATEGIES)
         raise ValueError(f"Unknown strategy {strategy!r}; expected one of: {supported}") from error
 
-    return [
-        IndexDocument(
-            record_id=record.record_id,
-            text=renderer(record),
-            metadata={
-                "name": record.name,
-                "category": record.category,
-                "strategy": strategy,
-            },
+    documents: list[IndexDocument] = []
+    for record in records:
+        metadata: dict[str, str | float] = {
+            "name": record.name,
+            "category": record.category,
+            "strategy": strategy,
+            # Nutrition fields (needed by llm_service for per-gram computation)
+            "energi": record.nutrients.get("Energi"),
+            "protein": record.nutrients.get("Protein"),
+            "lemak": record.nutrients.get("Lemak"),
+            "karbohidrat": record.nutrients.get("Karbohidrat"),
+            "serat": record.nutrients.get("Serat"),
+            "gi_value": record.gi_value,
+            "gl_value": record.gl_value,
+            "serving_size_g": record.serving_size_g,
+            "bdd": record.bdd,
+        }
+        # ChromaDB cannot store None metadata values; drop absent fields.
+        documents.append(
+            IndexDocument(
+                record_id=record.record_id,
+                text=renderer(record),
+                metadata={k: v for k, v in metadata.items() if v is not None},
+            )
         )
-        for record in records
-    ]
+    return documents
 
 
 def _embed_with_retry(
