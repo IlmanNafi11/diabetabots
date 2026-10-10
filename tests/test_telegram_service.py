@@ -79,6 +79,7 @@ class TestTelegramUpdateParsing:
         assert update.chat_id == 42
         assert update.user_id == 42
         assert update.callback_data == "confirm_ya"
+        assert update.callback_query_id == "cb-001"
         assert update.text is None
 
     def test_edited_message_ignored(self) -> None:
@@ -311,6 +312,52 @@ class TestSendMessage:
             assert body["reply_markup"] == {"inline_keyboard": keyboard}
 
     @pytest.mark.asyncio()
+    async def test_edit_message_reply_markup_clears_buttons(self, mock_settings: MagicMock) -> None:
+        with patch("httpx.Client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"ok": True, "result": {"message_id": 77}}
+            mock_response.raise_for_status = MagicMock()
+            mock_client.return_value.post.return_value = mock_response
+
+            from app.services.telegram_service import TelegramService
+
+            svc = TelegramService(settings=mock_settings)
+            result = await svc.edit_message_reply_markup(
+                chat_id=42,
+                message_id=77,
+                inline_keyboard=[],
+            )
+
+            assert result["message_id"] == 77
+            call_args = mock_client.return_value.post.call_args
+            assert "editMessageReplyMarkup" in call_args[0][0]
+            body = call_args[1]["json"]
+            assert body == {
+                "chat_id": 42,
+                "message_id": 77,
+                "reply_markup": {"inline_keyboard": []},
+            }
+
+    @pytest.mark.asyncio()
+    async def test_edit_message_reply_markup_api_error_raises(
+        self, mock_settings: MagicMock
+    ) -> None:
+        with patch("httpx.Client") as mock_client:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "ok": False,
+                "error_code": 400,
+                "description": "Bad Request: message is not modified",
+            }
+            mock_response.raise_for_status = MagicMock()
+            mock_client.return_value.post.return_value = mock_response
+
+            from app.services.telegram_service import TelegramService
+
+            svc = TelegramService(settings=mock_settings)
+            with pytest.raises(RuntimeError, match="not modified"):
+                await svc.edit_message_reply_markup(chat_id=42, message_id=77, inline_keyboard=[])
+
     async def test_send_message_api_error_raises(self, mock_settings: MagicMock) -> None:
         with patch("httpx.Client") as mock_client:
             mock_response = MagicMock()

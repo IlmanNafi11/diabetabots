@@ -82,6 +82,7 @@ class TelegramUpdate:
     user_id: int | None = None
     text: str | None = None
     callback_data: str | None = None
+    callback_query_id: str | None = None
     message_id: int | None = None  # from the message inside callback_query
     date: int = 0  # Unix timestamp from the message
 
@@ -119,6 +120,7 @@ class TelegramUpdate:
                 chat_id=_int(cq, "message", "chat", "id"),
                 user_id=_int(cq, "from", "id"),
                 callback_data=cq.get("data"),
+                callback_query_id=cq.get("id"),
                 message_id=_int(cq, "message", "message_id"),
             )
 
@@ -348,6 +350,36 @@ class TelegramService:
             text,
             reply_markup={"inline_keyboard": inline_keyboard},
         )
+
+    async def edit_message_reply_markup(
+        self,
+        chat_id: int,
+        message_id: int,
+        *,
+        inline_keyboard: list[list[dict[str, str]]],
+    ) -> dict[str, Any]:
+        """Replace a message's inline keyboard (pass ``[]`` to clear buttons).
+
+        Used after a "Ya"/"Tidak" tap so the resolved analysis message no longer
+        offers a second tap. Telegram rejects a no-op edit with
+        ``message is not modified``; callers may ignore that specific error.
+        """
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": {"inline_keyboard": inline_keyboard},
+        }
+        response = self._client.post(
+            f"{self._base_url}/editMessageReplyMarkup",
+            json=payload,
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not body.get("ok"):
+            raise RuntimeError(
+                f"Telegram API error {body.get('error_code')}: {body.get('description', body)}"
+            )
+        return body.get("result", {})
 
     async def answer_callback_query(
         self,

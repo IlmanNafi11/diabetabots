@@ -114,6 +114,7 @@ def mock_telegram_svc() -> AsyncMock:
     svc.send_message_with_inline_buttons = AsyncMock(
         return_value={"ok": True, "result": {"message_id": 101}}
     )
+    svc.edit_message_reply_markup = AsyncMock(return_value={"ok": True, "result": {}})
     return svc
 
 
@@ -442,7 +443,9 @@ class TestCallbackQueries:
 
         await handler.handle_update(update)
 
-        mock_energy_svc.confirm_consumption.assert_awaited_once_with(12345, pending_id)
+        mock_telegram_svc.edit_message_reply_markup.assert_awaited_once_with(
+            12345, 11, inline_keyboard=[]
+        )
         mock_telegram_svc.send_message.assert_awaited()
 
     @pytest.mark.asyncio()
@@ -462,6 +465,9 @@ class TestCallbackQueries:
         mock_energy_svc.decline_consumption.assert_awaited_once_with(12345, pending_id)
         mock_energy_svc.confirm_consumption.assert_not_awaited()
         _, text = mock_telegram_svc.send_message.call_args.args
+        mock_telegram_svc.edit_message_reply_markup.assert_awaited_once_with(
+            12345, 12, inline_keyboard=[]
+        )
         assert "tidak dicatat" in text.lower()
 
     @pytest.mark.asyncio()
