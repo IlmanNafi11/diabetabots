@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from uuid import UUID
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.bot.conversation import ConversationManager, ConversationState
 from app.bot.validators import (
@@ -31,8 +34,9 @@ from app.bot.validators import (
     parse_height,
     parse_weight,
 )
-from app.services.energy_service import EnergyService
+from app.services.energy_service import ConfirmationStatus, EnergyService
 from app.services.llm_service import LLMService, UserProfile
+from app.services.nutrition_service import glycemic_load
 from app.services.rag_service import RAGService
 from app.services.registration_service import RegistrationService
 from app.services.telegram_service import TelegramService, TelegramUpdate, TelegramUpdateType
@@ -51,12 +55,20 @@ _NON_MASS_PORTION_RE = re.compile(
 # Inline keyboard layouts
 # ---------------------------------------------------------------------------
 
-CONFIRM_KEYBOARD = [
-    [
-        {"text": "Ya", "callback_data": "confirm_ya"},
-        {"text": "Tidak", "callback_data": "confirm_tidak"},
+# Callback data carries the pending_analyses row id so a tap resolves against
+# the exact verified payload shown, never a re-derivation (PRD section 8.1).
+_CONFIRM_YA_PREFIX = "confirm_ya:"
+_CONFIRM_TIDAK_PREFIX = "confirm_tidak:"
+
+
+def build_confirm_keyboard(pending_id: UUID) -> list[list[dict[str, str]]]:
+    """Return the "Catat sebagai konsumsi?" inline keyboard for a pending row."""
+    return [
+        [
+            {"text": "Ya", "callback_data": f"{_CONFIRM_YA_PREFIX}{pending_id}"},
+            {"text": "Tidak", "callback_data": f"{_CONFIRM_TIDAK_PREFIX}{pending_id}"},
+        ]
     ]
-]
 
 
 # ---------------------------------------------------------------------------
@@ -102,10 +114,6 @@ class TelegramUpdateHandler:
         self._rag_svc = rag_svc
         self._llm_svc = llm_svc
         self._session = session
-
-        # In-process store for pending analyses (message_id → analysis payload).
-        # Idempotency against double-taps is enforced by the `resolved` flag.
-        self._pending_analyses: dict[int, dict[str, Any]] = {}
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -166,17 +174,23 @@ class TelegramUpdateHandler:
     # ------------------------------------------------------------------
 
     async def _handle_callback(self, update: TelegramUpdate) -> None:
-        """Handle inline button taps (Ya / Tidak)."""
-        if update.chat_id is None or update.message_id is None or update.callback_data is None:
+        """Handle inline button taps bound to a persisted pending row."""
+        if update.chat_id is None or update.callback_data is None:
             return
 
-        data = update.callback_data
+        try:
+            action, pending_text = update.callback_data.split(":", 1)
+            pending_id = UUID(pending_text)
+        except (ValueError, AttributeError):
+            await self._send(update.chat_id, "Analisis tidak berlaku.")
+            return
 
-        if data == "confirm_ya":
-            await self._handle_confirm_ya(update.chat_id, update.message_id)
-        elif data == "confirm_tidak":
-            await self._handle_confirm_tidak(update.chat_id, update.message_id)
-        # Unknown callback data: no-op.
+        if action == "confirm_ya":
+            await self._handle_confirm_ya(update.chat_id, pending_id)
+        elif action == "confirm_tidak":
+            await self._handle_confirm_tidak(update.chat_id, pending_id)
+        else:
+            await self._send(update.chat_id, "Analisis tidak berlaku.")
 
     # ------------------------------------------------------------------
     # Registration step handlers
@@ -338,27 +352,37 @@ class TelegramUpdateHandler:
             # Compose analysis message
             analysis_text = result.narrative
 
-            # Send with Ya/Tidak buttons and store pending
-            sent = await self._telegram_svc.send_message_with_inline_buttons(
-                chat_id=chat_id,
-                text=analysis_text,
-                inline_keyboard=CONFIRM_KEYBOARD,
-            )
-            message_id = sent.get("message_id") or 0
-
-            # Store payload for idempotent callback processing
+            # Compute the verified energy/GL payload from TKPI data. The LLM
+            # narrative is never the source for callback arithmetic.
             first_food = retrieved[0]
             energi_kkal = None
             if first_food.energi_per_100g is not None:
                 energi_kkal = round(first_food.energi_per_100g * gram / 100, 2)
-            self._pending_analyses[message_id] = {
-                "telegram_id": chat_id,
-                "nama_pangan": food_query,
-                "gram": gram,
-                "energi_kkal": energi_kkal,
-                "gl_aktual": None,
-                "resolved": False,
-            }
+            if energi_kkal is None:
+                await self._send(
+                    chat_id,
+                    "Energi pangan tidak tersedia pada sumber TKPI; konsumsi tidak dapat dicatat.",
+                )
+                return
+
+            gl_aktual = None
+            if first_food.gl_value is not None and first_food.serving_size_g is not None:
+                gl_aktual = glycemic_load(first_food.gl_value, gram, first_food.serving_size_g)
+
+            pending = await self._energy_svc.create_pending(
+                chat_id,
+                nama_pangan=food_query,
+                gram=gram,
+                energi_kkal=energi_kkal,
+                gl_aktual=gl_aktual,
+            )
+
+            # Send with callback data bound to the persisted pending payload.
+            await self._telegram_svc.send_message_with_inline_buttons(
+                chat_id=chat_id,
+                text=analysis_text,
+                inline_keyboard=build_confirm_keyboard(pending.id),
+            )
 
         except Exception as exc:
             log.exception("Analysis failed for chat %s: %s", chat_id, exc)
@@ -368,43 +392,53 @@ class TelegramUpdateHandler:
     # Callback handlers
     # ------------------------------------------------------------------
 
-    async def _handle_confirm_ya(self, chat_id: int, message_id: int) -> None:
-        """Reduce energy balance and acknowledge."""
-        pending = self._pending_analyses.get(message_id)
-        if pending is None or pending.get("resolved"):
-            # Already resolved (double-tap) or unknown → silently acknowledge only
-            await self._telegram_svc.send_message(chat_id, "✅ Sudah tercatat.")
+    async def _handle_confirm_ya(self, chat_id: int, pending_id: UUID) -> None:
+        """Log a confirmed consumption, reducing the balance exactly once."""
+        try:
+            status, record, warned = await self._energy_svc.confirm_consumption(
+                chat_id, pending_id
+            )
+        except SQLAlchemyError as exc:
+            log.exception("Ya confirm failed: %s", exc)
+            await self._telegram_svc.send_message(chat_id, "Maaf, gagal menyimpan. Coba lagi.")
             return
 
-        try:
-            energi = pending["energi_kkal"]
-            _, warned = await self._energy_svc.reduce_energy_with_flag(
-                chat_id, energi, allow_negative=True
-            )
-            pending["resolved"] = True
-
+        if status is ConfirmationStatus.CONFIRMED:
+            assert record is not None
             if warned:
                 await self._telegram_svc.send_message(
                     chat_id,
-                    "✅ Dicatat. Perhatian: batas energi harian tercapai (sisa negatif). "
+                    f"✅ Tercatat. Sisa energi hari ini: {record.sisa_energi_kkal} kkal.\n"
+                    "Perhatian: batas energi harian tercapai (sisa negatif). "
                     "Konsumsi berlebih tidak disarankan.",
                 )
             else:
                 await self._telegram_svc.send_message(
-                    chat_id, "✅ Dicatat. Energi harian diperbarui."
+                    chat_id,
+                    f"✅ Tercatat. Sisa energi hari ini: {record.sisa_energi_kkal} kkal.",
                 )
-        except Exception as exc:
-            log.exception("Ya confirm failed: %s", exc)
-            await self._telegram_svc.send_message(chat_id, f"Maaf, gagal menyimpan: {exc}")
+        elif status is ConfirmationStatus.ALREADY_RESOLVED:
+            await self._telegram_svc.send_message(chat_id, "✅ Analisis ini sudah tercatat.")
+        else:  # STALE or NOT_FOUND
+            await self._telegram_svc.send_message(
+                chat_id, "Analisis sudah tidak berlaku. Kirim makanan baru untuk analisis."
+            )
 
-    async def _handle_confirm_tidak(self, chat_id: int, message_id: int) -> None:
-        """No energy reduction; acknowledge and discard."""
-        pending = self._pending_analyses.get(message_id)
-        if pending is not None:
-            pending["resolved"] = True
-        await self._telegram_svc.send_message(
-            chat_id, "Analisis dibatalkan. Ketik makanan lain jika ingin consulta lagi."
-        )
+    async def _handle_confirm_tidak(self, chat_id: int, pending_id: UUID) -> None:
+        """Decline a consumption: no balance change, no log row."""
+        try:
+            status = await self._energy_svc.decline_consumption(chat_id, pending_id)
+        except SQLAlchemyError as exc:
+            log.exception("Tidak confirm failed: %s", exc)
+            await self._telegram_svc.send_message(chat_id, "Maaf, gagal memproses. Coba lagi.")
+            return
+
+        if status is ConfirmationStatus.STALE:
+            await self._telegram_svc.send_message(
+                chat_id, "Analisis sudah tidak berlaku. Kirim makanan baru untuk analisis."
+            )
+        else:
+            await self._telegram_svc.send_message(chat_id, "Baik, tidak dicatat.")
 
     # ------------------------------------------------------------------
     # IDLE helper

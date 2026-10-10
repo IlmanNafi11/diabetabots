@@ -18,16 +18,16 @@ Covers:
 - gram clarification flow
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 
 from app.bot.conversation import ConversationManager, ConversationState
 from app.bot.handlers import TelegramUpdateHandler
 from app.models.models import ActivityLevel, Gender
+from app.services.energy_service import ConfirmationStatus
 from app.services.llm_service import NutritionResult
 from app.services.rag_service import RetrievedFood
 from app.services.telegram_service import TelegramUpdate
@@ -128,6 +128,11 @@ def mock_reg_svc(mock_session: AsyncMock) -> AsyncMock:
 @pytest.fixture()
 def mock_energy_svc() -> AsyncMock:
     svc = AsyncMock()
+    svc.create_pending = AsyncMock(return_value=MagicMock(id=UUID(int=1)))
+    svc.confirm_consumption = AsyncMock(
+        return_value=(ConfirmationStatus.CONFIRMED, MagicMock(sisa_energi_kkal=2000.0), False)
+    )
+    svc.decline_consumption = AsyncMock(return_value=ConfirmationStatus.DECLINED)
     return svc
 
 
@@ -426,58 +431,40 @@ class TestFoodQuery:
 
 class TestCallbackQueries:
     @pytest.mark.asyncio()
-    async def test_callback_ya_reduces_energy_and_confirms(
+    async def test_callback_ya_confirms_pending_and_acknowledges(
         self,
         handler: TelegramUpdateHandler,
         mock_telegram_svc: AsyncMock,
         mock_energy_svc: AsyncMock,
     ) -> None:
-        mock_energy_record = MagicMock()
-        mock_energy_record.sisa_energi_kkal = 2000.0
-        mock_energy_svc.reduce_energy_with_flag = AsyncMock(
-            return_value=(mock_energy_record, False)
+        pending_id = UUID(int=1)
+        update = _make_callback_update(
+            data=f"confirm_ya:{pending_id}", update_id=9, message_id=11
         )
 
-        handler._pending_analyses[11] = {
-            "telegram_id": 12345,
-            "nama_pangan": "Nasi Goreng",
-            "gram": 150.0,
-            "energi_kkal": 200.0,
-            "resolved": False,
-        }
-
-        update = _make_callback_update(data="confirm_ya", update_id=9, message_id=11)
         await handler.handle_update(update)
 
-        mock_energy_svc.reduce_energy_with_flag.assert_awaited()
+        mock_energy_svc.confirm_consumption.assert_awaited_once_with(12345, pending_id)
         mock_telegram_svc.send_message.assert_awaited()
 
     @pytest.mark.asyncio()
-    async def test_callback_tidak_does_nothing(
+    async def test_callback_tidak_declines_pending_without_reducing(
         self,
         handler: TelegramUpdateHandler,
         mock_telegram_svc: AsyncMock,
         mock_energy_svc: AsyncMock,
     ) -> None:
-        mock_energy_record = MagicMock()
-        mock_energy_record.sisa_energi_kkal = 2000.0
-        mock_energy_svc.reduce_energy_with_flag = AsyncMock(
-            return_value=(mock_energy_record, False)
+        pending_id = UUID(int=1)
+        update = _make_callback_update(
+            data=f"confirm_tidak:{pending_id}", update_id=10, message_id=12
         )
 
-        handler._pending_analyses[12] = {
-            "telegram_id": 12345,
-            "nama_pangan": "Nasi Goreng",
-            "gram": 150.0,
-            "energi_kkal": 200.0,
-            "resolved": False,
-        }
-
-        update = _make_callback_update(data="confirm_tidak", update_id=10, message_id=12)
         await handler.handle_update(update)
 
-        mock_energy_svc.reduce_energy_with_flag.assert_not_called()
-        mock_telegram_svc.send_message.assert_awaited()
+        mock_energy_svc.decline_consumption.assert_awaited_once_with(12345, pending_id)
+        mock_energy_svc.confirm_consumption.assert_not_awaited()
+        _, text = mock_telegram_svc.send_message.call_args.args
+        assert "tidak dicatat" in text.lower()
 
     @pytest.mark.asyncio()
     async def test_callback_already_resolved_is_ignored(
@@ -486,20 +473,37 @@ class TestCallbackQueries:
         mock_telegram_svc: AsyncMock,
         mock_energy_svc: AsyncMock,
     ) -> None:
-        handler._pending_analyses[13] = {
-            "telegram_id": 12345,
-            "nama_pangan": "Nasi Goreng",
-            "gram": 150.0,
-            "energi_kkal": 200.0,
-            "resolved": True,  # Already resolved — double-tap
-        }
+        mock_energy_svc.confirm_consumption = AsyncMock(
+            return_value=(ConfirmationStatus.ALREADY_RESOLVED, None, False)
+        )
+        pending_id = UUID(int=1)
+        update = _make_callback_update(
+            data=f"confirm_ya:{pending_id}", update_id=11, message_id=13
+        )
 
-        update = _make_callback_update(data="confirm_ya", update_id=11, message_id=13)
         await handler.handle_update(update)
 
-        mock_energy_svc.reduce_energy_with_flag.assert_not_called()
-        # Sends an idempotent acknowledgement instead of reducing again
-        mock_telegram_svc.send_message.assert_awaited_once()
+        mock_energy_svc.confirm_consumption.assert_awaited_once_with(12345, pending_id)
+        _, text = mock_telegram_svc.send_message.call_args.args
+        assert "sudah" in text.lower()
+
+    @pytest.mark.asyncio()
+    async def test_callback_stale_is_rejected(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        mock_energy_svc.confirm_consumption = AsyncMock(
+            return_value=(ConfirmationStatus.STALE, None, False)
+        )
+        pending_id = UUID(int=1)
+        update = _make_callback_update(data=f"confirm_ya:{pending_id}", update_id=12)
+
+        await handler.handle_update(update)
+
+        _, text = mock_telegram_svc.send_message.call_args.args
+        assert "tidak berlaku" in text.lower()
 
 
 # ---------------------------------------------------------------------------
