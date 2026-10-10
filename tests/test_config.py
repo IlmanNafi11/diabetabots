@@ -97,7 +97,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
 
-    s = Settings()
+    s = Settings(_env_file=None)
 
     assert s.telegram_bot_token == "your-telegram-bot-token"
     assert s.llm_base_url == "https://your-llm-endpoint/v1"
