@@ -1,0 +1,30 @@
+warning: No `requires-python` value found in the workspace. Defaulting to `>=3.11`.
+........................................................................ [ 29%]
+........................................................................ [ 58%]
+........................................................................ [ 88%]
+.............................                                            [100%]
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.11.16-final-0 _______________
+
+Name                                Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------
+app/bot/__init__.py                     4      0      0      0   100%
+app/bot/conversation.py                77      0      4      0   100%
+app/bot/responses.py                   40      0     12      0   100%
+app/bot/validators.py                  55      0     26      0   100%
+app/config.py                          27      0      2      0   100%
+app/database.py                        15      0      0      0   100%
+app/main.py                             7      0      0      0   100%
+app/models/__init__.py                  2      0      0      0   100%
+app/models/models.py                   57      0      0      0   100%
+app/routers/__init__.py                 0      0      0      0   100%
+app/routers/health.py                   5      0      0      0   100%
+app/scripts/__init__.py                 0      0      0      0   100%
+app/scripts/run_spike.py              175     77     42     10    52%   116, 146->148, 148->150, 155->159, 157->159, 170->174, 172->174, 186-188, 207, 218, 236, 257-297, 319-353, 357-370, 374-380, 391-439, 443-454, 461
+app/services/__init__.py                0      0      0      0   100%
+app/services/energy_service.py         50      0      6      0   100%
+app/services/nutrition_service.py      24      0     14      0   100%
+app/services/tdee_service.py            9      0      0      0   100%
+-------------------------------------------------------------------------------
+TOTAL                                 547     77    106     10    84%
+245 passed in 3.12s
