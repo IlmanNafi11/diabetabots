@@ -1,6 +1,7 @@
 """Bot package — Telegram conversation, validation, and response rendering."""
 
 from app.bot.conversation import ConversationManager, ConversationState
+from app.bot.handlers import TelegramUpdateHandler
 from app.bot.responses import AnalysisResponse, format_analysis
 from app.bot.validators import (
     ValidationError,
@@ -16,6 +17,7 @@ __all__ = [
     "AnalysisResponse",
     "ConversationManager",
     "ConversationState",
+    "TelegramUpdateHandler",
     "ValidationError",
     "format_analysis",
     "parse_activity",

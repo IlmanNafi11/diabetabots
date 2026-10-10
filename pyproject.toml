@@ -23,3 +23,7 @@ select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/services/llm_service.py" = ["E501"]  # prompt templates are inherently >100 chars
+"app/bot/handlers.py" = ["E501"]  # user-facing strings (Indonesian) intentionally >100 chars
+"app/services/telegram_service.py" = ["E501"]  # Telegram API URLs intentionally >100 chars
+"tests/test_telegram_service.py" = ["E501", "F541"]  # long mock patch strings
+"tests/test_telegram_handlers.py" = ["E501", "F541"]
