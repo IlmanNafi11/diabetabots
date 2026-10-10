@@ -1,0 +1,48 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.6.0 -- /home/agentuser/projects/diabetabots/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/agentuser/projects/diabetabots
+configfile: pyproject.toml
+plugins: anyio-4.15.1, cov-7.1.0, asyncio-1.4.0, langsmith-0.14.7
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 37 items
+
+tests/test_pending_confirmation.py::TestCreatePending::test_create_pending_persists_row PASSED [  2%]
+tests/test_pending_confirmation.py::TestCreatePending::test_create_pending_stamps_today_wib PASSED [  5%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_confirm_reduces_and_logs PASSED [  8%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_confirm_marks_pending_resolved PASSED [ 10%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_double_confirm_reduces_once PASSED [ 13%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_confirm_unknown_pending_is_not_found PASSED [ 16%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_confirm_stale_callback_rejected PASSED [ 18%]
+tests/test_pending_confirmation.py::TestConfirmConsumption::test_confirm_warns_when_negative PASSED [ 21%]
+tests/test_pending_confirmation.py::TestDeclineConsumption::test_decline_marks_resolved_without_recording PASSED [ 24%]
+tests/test_pending_confirmation.py::TestDeclineConsumption::test_decline_unknown_pending_is_not_found PASSED [ 27%]
+tests/test_energy_scheduler.py::TestResetAllForDate::test_seeds_every_user_on_target_date PASSED [ 29%]
+tests/test_energy_scheduler.py::TestResetAllForDate::test_does_not_overwrite_existing_balance PASSED [ 32%]
+tests/test_energy_scheduler.py::TestResetAllForDate::test_defaults_to_today_wib PASSED [ 35%]
+tests/test_energy_scheduler.py::TestRunMidnightReset::test_tick_seeds_and_returns_count PASSED [ 37%]
+tests/test_energy_scheduler.py::TestSchedulerConstruction::test_registers_single_midnight_job_in_jakarta PASSED [ 40%]
+tests/test_energy_scheduler.py::TestSchedulerConstruction::test_scheduler_is_not_running_until_started PASSED [ 43%]
+tests/test_telegram_handlers.py::TestStartCommand::test_start_sends_registration_prompt PASSED [ 45%]
+tests/test_telegram_handlers.py::TestStartCommand::test_start_idle_resets_to_await_gender PASSED [ 48%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_gender_moves_to_await_age PASSED [ 51%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_invalid_gender_reprompts PASSED [ 54%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_age_moves_to_await_weight PASSED [ 56%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_invalid_age_reprompts PASSED [ 59%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_weight_moves_to_await_height PASSED [ 62%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_height_moves_to_await_activity PASSED [ 64%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_accept_activity_completes_registration PASSED [ 67%]
+tests/test_telegram_handlers.py::TestRegistrationFlow::test_invalid_activity_reprompts PASSED [ 70%]
+tests/test_telegram_handlers.py::TestFoodQuery::test_food_query_returns_analysis_with_buttons PASSED [ 72%]
+tests/test_telegram_handlers.py::TestFoodQuery::test_energy_persisted_applies_bdd_edible_portion PASSED [ 75%]
+tests/test_telegram_handlers.py::TestFoodQuery::test_gram_clarify_for_non_numeric_portion PASSED [ 78%]
+tests/test_telegram_handlers.py::TestFoodQuery::test_unavailable_food_sends_not_found_without_analysis PASSED [ 81%]
+tests/test_telegram_handlers.py::TestCallbackQueries::test_callback_ya_confirms_pending_and_acknowledges PASSED [ 83%]
+tests/test_telegram_handlers.py::TestCallbackQueries::test_callback_tidak_declines_pending_without_reducing PASSED [ 86%]
+tests/test_telegram_handlers.py::TestCallbackQueries::test_callback_already_resolved_is_ignored PASSED [ 89%]
+tests/test_telegram_handlers.py::TestCallbackQueries::test_callback_stale_is_rejected PASSED [ 91%]
+tests/test_telegram_handlers.py::TestIdleState::test_idle_non_command_prompts_registration PASSED [ 94%]
+tests/test_telegram_handlers.py::TestHandlerSessionWiring::test_handler_accepts_session_kwarg PASSED [ 97%]
+tests/test_telegram_handlers.py::TestHandlerSessionWiring::test_handler_sessionless_instantiation_works PASSED [100%]
+
+============================== 37 passed in 2.03s ==============================

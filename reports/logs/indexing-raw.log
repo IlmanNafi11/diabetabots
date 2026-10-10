@@ -1,0 +1,1 @@
+{"timestamp": "2026-10-10T20:15:45.356571+00:00", "dataset": "data/tkpi-gi-final.jsonl", "collection": "tkpi_gi", "chunking_strategy": "recursive", "embedding_model": "text-embedding-3-large", "embedding_dim": 3072, "document_count": 1146}
