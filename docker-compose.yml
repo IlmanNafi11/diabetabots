@@ -1,0 +1,35 @@
+services:
+  app:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/app/chroma_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Mode A: PostgreSQL provided by compose.
+  # Mode B: delete this service, point DATABASE_URL at an external host, and
+  # attach the app to the external network as described in the README.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-diabetabot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diabetabot}
+      POSTGRES_DB: ${POSTGRES_DB:-diabetabot}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-diabetabot} -d ${POSTGRES_DB:-diabetabot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  chroma_data:

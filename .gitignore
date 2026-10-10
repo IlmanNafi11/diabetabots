@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE / OS
+.idea/
+.vscode/
+.env
+*.swp
+.DS_Store
+
+# Runtime data
+chroma_db/
+reports/
+
+# Build output
+build/
+dist/
+
+# Development notes excluded from version control (repository rules)
+RULES.md
+PRD-DiabetaBot.md
+tasks/
+docs/
+SPEC.md

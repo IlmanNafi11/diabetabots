@@ -1,0 +1,1 @@
+"""DiabetaBot application package."""
