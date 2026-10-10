@@ -166,7 +166,12 @@ class TelegramService:
         self._settings = settings or Settings()
         self._base_url = f"https://api.telegram.org/bot{self._settings.telegram_bot_token}"
         self._max_retries = max_retries
-        self._client = httpx.Client(timeout=30.0)
+        # Long-polling holds the connection open for up to ``timeout`` seconds
+        # (default 55), so the HTTP read timeout must exceed that or every poll
+        # aborts with a client-side read timeout before Telegram replies.
+        self._client = httpx.Client(
+            timeout=httpx.Timeout(connect=10.0, read=70.0, write=10.0, pool=10.0)
+        )
         self._running = False
         self._offset: int | None = None
         self._seen_update_ids: set[int] = field(default_factory=set)
