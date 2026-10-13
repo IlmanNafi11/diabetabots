@@ -126,6 +126,23 @@ class TestLLMServiceConstruction:
             service = LLMService(settings=mock_settings)  # type: ignore[arg-type]
             assert service is not None
 
+    def test_llm_client_timeout_covers_provider_tail_latency(
+        self, mock_settings: MagicMock
+    ) -> None:
+        """ChatOpenAI must be constructed with a request_timeout above 30 s.
+
+        Live verification showed the configured gateway returns successful
+        completions for the real system prompt in 34-38 s; a 30 s client
+        timeout aborts requests the provider would have answered
+        (OpenAITimeoutError on AC4 integration runs).
+        """
+        service = LLMService(settings=mock_settings)  # type: ignore[arg-type]
+        with patch("app.services.llm_service.ChatOpenAI") as chat_openai:
+            llm = service._make_llm()
+            chat_openai.assert_called_once()
+            assert chat_openai.call_args.kwargs["request_timeout"] > 30.0
+            assert llm is chat_openai.return_value
+
 
 # ---------------------------------------------------------------------------
 # build_system_prompt — pure function

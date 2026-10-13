@@ -390,7 +390,11 @@ class LLMService:
             api_key=self._settings.llm_api_key,
             model=self._settings.chat_model_name,
             temperature=self._settings.llm_temperature,
-            request_timeout=30.0,
+            # Live gateway measurements (2026-10-13): the real system prompt
+            # completes in 34-38 s at temperature 0; 30 s aborted requests the
+            # provider would have answered. 90 s covers that tail latency and
+            # still expires on a hung connection.
+            request_timeout=90.0,
         )
 
     def _get_llm(self) -> ChatOpenAI:
