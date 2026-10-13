@@ -92,3 +92,15 @@ Seluruh area yang pada 2026-10-11 terblokir kini terverifikasi lulus:
 - `docker compose up -d --build`: sukses; kedua kontainer healthy.
 - Log mentah historis tidak diubah; bukti rerun disimpan terpisah di
   `reports/logs/reverify-2026-10-13/`.
+
+## Catatan Lanjutan (Timeout Klien)
+
+Verifikasi ulang berikutnya pada hari yang sama menemukan bahwa satu uji AC4
+(`nasi-putih-100g`) gagal kembali dengan `OpenAITimeoutError` pada suite
+penuh: `request_timeout=30.0` di klien LLM lebih ketat daripada latensi ekor
+penyedia nyata (respons sukses terukur 34,0 s dan 37,9 s; gateway juga 504
+nginx pada 60,0 s untuk sebagian permintaan). Perbaikan: `request_timeout`
+dinaikkan ke 90,0 s dengan uji konstruksi sebagai penjaga (TDD). AC4
+diverifikasi ulang live dan lulus (3 passed, 137,27 s). Rincian dan bukti:
+`laporan-verifikasi-ac4-timeout-2026-10-13.md`. Risiko sisa: 504 sisi
+penyedia pada 60 s tidak dapat dimigasi dari repositori.
