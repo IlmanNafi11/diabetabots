@@ -124,13 +124,17 @@ def _mock_profile() -> SimpleNamespace:
 def _extract_nutrients(narrative: str) -> dict[str, float | None]:
     """Pull nutrition numbers from the §3.5-style LLM narrative.
 
+    Tolerates light markdown drift (bold labels, table cells) but never scans
+    past the end of the label's own line, so a missing value cannot silently
+    bind to an unrelated number further down the narrative.
+
     Returns a dict with keys ``Energi``, ``Protein``, ``Lemak``,
     ``Karbohidrat``, ``Serat``. Values are ``float`` when found, else ``None``.
     """
     result: dict[str, float | None] = {}
     for key in ["Energi", "Protein", "Lemak", "Karbohidrat", "Serat"]:
-        pattern = rf"{re.escape(key)}[^:]*?:\s*([0-9]+(?:[.,][0-9]+)?)"
-        m = re.search(pattern, narrative, re.IGNORECASE)
+        pattern = rf"\b{re.escape(key)}\b[^\n]*?([0-9]+(?:[.,][0-9]+)?)"
+        m = re.search(pattern, narrative)
         if m:
             raw = m.group(1).replace(",", ".")
             result[key] = float(raw)
@@ -175,20 +179,30 @@ def test_format_food_context_matches_source(
     context = format_food_context([food], gram=gram)
     assert food.name in context, "Food name must appear in context"
 
-    # Verify energy is approximately scaled
+    # Verify both the source per-100 g value and the scaled portion value.
+    # The context renders them as "Energi <source> kkal/100g→<portion> kkal".
     if "Energi" not in gt:
         pytest.skip("No Energi in ground truth")
 
     source_kcal = gt["Energi"]
     expected_kcal = source_kcal * gram / 100.0
 
-    m = re.search(r"Energi\s+([0-9]+(?:[.,][0-9]+)?)", context)
-    assert m, f"Energy not found in context excerpt: {context[:300]}"
-    reported_kcal = float(m.group(1).replace(",", "."))
+    m = re.search(
+        r"Energi\s+([0-9]+(?:[.,][0-9]+)?)\s*kkal/100g→([0-9]+(?:[.,][0-9]+)?)",
+        context,
+    )
+    assert m, f"Energy pair not found in context excerpt: {context[:300]}"
+    reported_source = float(m.group(1).replace(",", "."))
+    reported_kcal = float(m.group(2).replace(",", "."))
 
+    diff_pct = abs(reported_source - source_kcal) / source_kcal * 100
+    assert diff_pct <= 1.0, (
+        f"Source energy deviation {diff_pct:.2f}% exceeds 1%: "
+        f"reported={reported_source}, source={source_kcal}"
+    )
     diff_pct = abs(reported_kcal - expected_kcal) / expected_kcal * 100
     assert diff_pct <= 1.0, (
-        f"Energy deviation {diff_pct:.2f}% exceeds 1%: "
+        f"Portion energy deviation {diff_pct:.2f}% exceeds 1%: "
         f"reported={reported_kcal}, expected={expected_kcal}"
     )
 
