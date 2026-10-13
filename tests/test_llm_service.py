@@ -199,10 +199,10 @@ class TestFormatFoodContext:
         foods = [make_retrieved_food()]
         context = format_food_context(foods, gram=150)
         # 130 kkal/100g * 150g / 100 = 195 kkal
-        assert "195" in context
+        assert "→ 195.0 kkal untuk 150 g siap konsumsi" in context
 
     def test_distinguishes_per_100g_source_from_bdd_adjusted_portion(self) -> None:
-        """The source label must not repeat the BDD-adjusted portion value."""
+        """Source operand must be BDD-labelled and portion operand must be BDD-adjusted."""
         foods = [
             make_retrieved_food(
                 name="Semangka, segar",
@@ -213,7 +213,17 @@ class TestFormatFoodContext:
 
         context = format_food_context(foods, gram=200)
 
-        assert "Energi 28.0 kkal/100g→25.76 kkal untuk 200g" in context
+        expected = "Energi 28.0 kkal/100 g (mentah, BDD 46%) → 25.76 kkal untuk 200 g siap konsumsi"
+        assert expected in context
+
+    def test_omits_bdd_note_when_bdd_is_full(self) -> None:
+        """BDD = 100 must not add a raw-food note to the energy operand."""
+        foods = [make_retrieved_food(energi_per_100g=130.0, bdd=100.0)]
+
+        context = format_food_context(foods, gram=100)
+
+        assert "BDD" not in context
+        assert "Energi 130.0 kkal/100 g → 130.0 kkal untuk 100 g siap konsumsi" in context
 
     def test_includes_gi_when_available(self) -> None:
         """GI value must appear in context when the food has it."""

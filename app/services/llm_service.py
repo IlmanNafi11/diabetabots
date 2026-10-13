@@ -127,7 +127,7 @@ PROFIL_PENGGUNA
 
 --- ATURAN ANALISIS ---
 1. Semua nilai nutrisi, IG, dan BG HARUS berasal dari dokumen konteks yang diberikan. JANGAN mengarang angka.
-2. Hitung nutrisi untuk porsi aktual (gram yang disebutkan pengguna) secara proporsional dari nilai per 100 g.
+2. Gunakan nilai porsi yang sudah dihitung sistem: pada konteks pangan, angka setelah panah "→" (contoh: "→ 47,22 kkal untuk 100 g siap konsumsi") adalah nilai porsi OTORITATIF. JANGAN menghitung ulang secara proporsional dari nilai per 100 g: pada pangan berlabel BDD < 100%, nilai per 100 g adalah nilai pangan mentah (belum dikurangi bagian tidak dapat dimakan), sedangkan nilai setelah panah sudah dikoreksi BDD.
 3. BG aktual = gl_value * gram_konsumsi / serving_size_g (jika gl_value tersedia).
 4. Jika data IG tidak tersedia dalam konteks, nyatakan secara eksplisit: "Data IG tidak tersedia pada sumber; kualitas karbohidrat tidak dapat dinilai."
 5. Nilai sisa energi harian dan TDEE disisipkan oleh sistem. Gunakan untuk menilai kelayakan konsumsi.
@@ -138,7 +138,7 @@ Gunakan format berikut untuk respons Anda:
 🍎 [Nama Pangan] — [Kategori] (sumber: TKPI 2020)
 Untuk [X gram]:
 
-• Energi: [E] kkal (dari [E/100g] kkal/100 g)
+• Energi: [E] kkal untuk [X gram] (sistem telah menghitung nilai ini; JANGAN hitung ulang) [opsional: — dari [E/100g] kkal/100 g BDD [B]%]
 • Protein: [P] g · Lemak: [L] g · Karbohidrat: [KH] g · Serat: [S] g
 • Indeks Glikemik: [GI] (kategori: rendah/sedang/tinggi) — atau:
   "Data IG tidak tersedia pada sumber; kualitas karbohidrat tidak dapat dinilai."
@@ -172,6 +172,11 @@ def format_food_context(foods: list[RetrievedFood], gram: float) -> str:
     lines: list[str] = []
     for food in foods:
         bdd = food.bdd if food.bdd is not None else 100.0
+        # BDD (Berat Dapat Dimakan) < 100 means the per-100 g values describe the
+        # raw food; only the BDD fraction is edible, so portion values below are
+        # BDD-adjusted. The context labels both operands so the LLM never has to
+        # guess which number is authoritative (scenario 10 lesson, PRD §7.3 #10).
+        bdd_note = f" (mentah, BDD {bdd:g}%)" if bdd < 100 else ""
         # Compute per-gram values; fall back to "tidak tersedia" if metadata missing
         # (graceful degradation for entries indexed before nutrition metadata was added)
         if food.energi_per_100g is not None:
@@ -215,7 +220,8 @@ def format_food_context(foods: list[RetrievedFood], gram: float) -> str:
 
         line = (
             f"- {food.name} ({food.category}): "
-            f"Energi {energi_per_100g} kkal/100g→{energi} kkal untuk {gram}g, "
+            f"Energi {energi_per_100g} kkal/100 g{bdd_note} "
+            f"→ {energi} kkal untuk {gram} g siap konsumsi, "
             f"Protein {protein}g, Lemak {lemak}g, Karbohidrat {karbo}g, Serat {serat}g; "
             f"{gi_str}; {', '.join(gl_parts)}"
         )
