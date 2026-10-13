@@ -179,21 +179,32 @@ def test_format_food_context_matches_source(
     context = format_food_context([food], gram=gram)
     assert food.name in context, "Food name must appear in context"
 
-    # Verify both the source per-100 g value and the scaled portion value.
-    # The context renders them as "Energi <source> kkal/100g→<portion> kkal".
+    # Verify both the source per-100 g value and the BDD-adjusted portion value.
+    # The context renders them as
+    # "Energi <source> kkal/100 g [ (mentah, BDD <B>%) ]
+    #  → <portion> kkal untuk <gram> g siap konsumsi".
     if "Energi" not in gt:
         pytest.skip("No Energi in ground truth")
 
     source_kcal = gt["Energi"]
-    expected_kcal = source_kcal * gram / 100.0
+    bdd = food.bdd if food.bdd is not None else 100.0
+    expected_kcal = source_kcal * gram * bdd / 100.0 / 100.0
 
     m = re.search(
-        r"Energi\s+([0-9]+(?:[.,][0-9]+)?)\s*kkal/100g→([0-9]+(?:[.,][0-9]+)?)",
+        r"Energi\s+([0-9]+(?:[.,][0-9]+)?)\s*kkal/100 ?g(?:\s*\(mentah, BDD "
+        r"([0-9]+(?:[.,][0-9]+)?)%\))?\s*→\s*([0-9]+(?:[.,][0-9]+)?)",
         context,
     )
     assert m, f"Energy pair not found in context excerpt: {context[:300]}"
     reported_source = float(m.group(1).replace(",", "."))
-    reported_kcal = float(m.group(2).replace(",", "."))
+    reported_kcal = float(m.group(3).replace(",", "."))
+
+    # The BDD note, when rendered, must match the metadata BDD exactly.
+    if m.group(2) is not None:
+        reported_bdd = float(m.group(2).replace(",", "."))
+        assert reported_bdd == bdd, f"Context BDD label {reported_bdd} != metadata BDD {bdd}"
+    elif bdd < 100.0:
+        pytest.fail(f"BDD {bdd} < 100 but context lacks the BDD note: {context[:300]}")
 
     diff_pct = abs(reported_source - source_kcal) / source_kcal * 100
     assert diff_pct <= 1.0, (
