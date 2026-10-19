@@ -6,15 +6,93 @@ benchmark command during the experimental run.
 
 from __future__ import annotations
 
+import json
 from io import StringIO
+from pathlib import Path
 
 from app.scripts.run_selfhost_benchmark import (
     BASELINE_PRECISION_AT_5,
     CANDIDATES,
     _candidate_failed,
     recommend,
+    render_report_from_log,
 )
 
+
+def test_render_report_from_log_aggregates_candidates_across_runs() -> None:
+    """The aggregate report must include candidates finished in earlier runs."""
+    raw_log = StringIO()
+    for candidate in (CANDIDATES[0], CANDIDATES[2]):
+        for _ in range(5):
+            raw_log.write(
+                json.dumps(
+                    {
+                        "timestamp": "2026-10-19T00:00:00+00:00",
+                        "candidate": candidate.key,
+                        "model": candidate.model,
+                        "runtime": candidate.runtime,
+                        "dimension": candidate.dim,
+                        "query": "q",
+                        "relevant_terms": ["x"],
+                        "retrieved_names": ["a", "b", "c", "d", "e"],
+                        "distances": [0.1] * 5,
+                        "precision_at_5": 0.8,
+                        "latency_ms": 100.0,
+                    }
+                )
+                + "\n"
+            )
+        raw_log.write(
+            json.dumps(
+                {
+                    "timestamp": "2026-10-19T00:00:00+00:00",
+                    "candidate": candidate.key,
+                    "event": "embedding_complete",
+                    "embedding_latency_ms": 12345.0,
+                }
+            )
+            + "\n"
+        )
+    raw_log_path = Path("/tmp/test-selfhost-aggregate.log")
+    raw_log_path.write_text(raw_log.getvalue(), encoding="utf-8")
+    report_path = render_report_from_log(
+        raw_log_path=raw_log_path,
+        reports_dir=Path("/tmp"),
+        dataset_path=Path("data/tkpi-gi-final.jsonl"),
+    )
+    body = report_path.read_text(encoding="utf-8")
+    assert "Qwen3-Embedding-0.6B" in body
+    assert "BGE-M3" in body
+    assert "0.800" in body
+    raw_log_path.unlink()
+    report_path.unlink()
+
+
+def test_render_report_from_log_marks_incomplete_candidate_failed() -> None:
+    raw_log = StringIO()
+    raw_log.write(
+        json.dumps(
+            {
+                "timestamp": "2026-10-19T00:00:00+00:00",
+                "candidate": "qwen3-0.6b",
+                "query": "q",
+                "precision_at_5": 0.8,
+                "latency_ms": 100.0,
+            }
+        )
+        + "\n"
+    )
+    raw_log_path = Path("/tmp/test-selfhost-incomplete.log")
+    raw_log_path.write_text(raw_log.getvalue(), encoding="utf-8")
+    report_path = render_report_from_log(
+        raw_log_path=raw_log_path,
+        reports_dir=Path("/tmp"),
+        dataset_path=Path("data/tkpi-gi-final.jsonl"),
+    )
+    body = report_path.read_text(encoding="utf-8")
+    assert "GAGAL" in body
+    raw_log_path.unlink()
+    report_path.unlink()
 
 def test_candidates_grid_matches_intent() -> None:
     keys = [candidate.key for candidate in CANDIDATES]

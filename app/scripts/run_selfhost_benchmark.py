@@ -25,6 +25,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -587,6 +588,71 @@ def run_benchmark(
     return {"results": results, "recommendation": recommendation, "report_path": report_path}
 
 
+def render_report_from_log(
+    *,
+    raw_log_path: Path,
+    reports_dir: Path,
+    dataset_path: Path,
+) -> Path:
+    """Render the aggregate report from a completed raw log (no models)."""
+    lines = [
+        json.loads(line)
+        for line in raw_log_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    results: list[dict[str, Any]] = []
+    for candidate in CANDIDATES:
+        queries = [
+            line
+            for line in lines
+            if line.get("candidate") == candidate.key and "precision_at_5" in line
+        ]
+        if not queries:
+            continue
+        if len(queries) != len(QUERY_CASES):
+            results.append(
+                _candidate_failed(
+                    StringIO(), candidate, "incomplete query results in raw log"
+                )
+            )
+            continue
+        embedding_ms = next(
+            (
+                float(line["embedding_latency_ms"])
+                for line in lines
+                if line.get("candidate") == candidate.key
+                and "embedding_latency_ms" in line
+            ),
+            0.0,
+        )
+        results.append(
+            {
+                "candidate": candidate.key,
+                "label": candidate.label,
+                "model": candidate.model,
+                "runtime": candidate.runtime,
+                "dimension": candidate.dim,
+                "mean_precision_at_5": mean_precision_at_5(queries),
+                "mean_latency_ms": statistics.fmean(
+                    float(query["latency_ms"]) for query in queries
+                ),
+                "embedding_latency_ms": embedding_ms,
+                "queries": queries,
+            }
+        )
+    recommendation = recommend(results, BASELINE_PRECISION_AT_5)
+    report_path = (
+        reports_dir / f"laporan-selfhost-{datetime.now(UTC).date().isoformat()}.md"
+    )
+    _write_report(
+        report_path,
+        dataset_path=dataset_path,
+        results=results,
+        recommendation=recommendation,
+        raw_log_path=raw_log_path,
+    )
+    return report_path
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("data/tkpi-gi-final.jsonl"))
@@ -597,9 +663,22 @@ def main() -> None:
         help="comma-separated candidate keys (default: all)",
     )
     parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="render the aggregate report from the existing raw log (no downloads)",
+    )
+    parser.add_argument(
         "--keep-models", action="store_true", help="keep downloaded models on disk"
     )
     args = parser.parse_args()
+    if args.report_only:
+        report_path = render_report_from_log(
+            raw_log_path=args.reports_dir / "logs" / "selfhost-raw.log",
+            reports_dir=args.reports_dir,
+            dataset_path=args.dataset,
+        )
+        print(f"Report: {report_path}")
+        return
     outcome = run_benchmark(
         dataset_path=args.dataset,
         reports_dir=args.reports_dir,
