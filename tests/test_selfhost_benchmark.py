@@ -96,14 +96,27 @@ def test_render_report_from_log_marks_incomplete_candidate_failed() -> None:
 
 def test_candidates_grid_matches_intent() -> None:
     keys = [candidate.key for candidate in CANDIDATES]
-    assert keys == ["qwen3-0.6b", "qwen3-4b", "bge-m3", "e5-large"]
+    assert keys == [
+        "qwen3-0.6b",
+        "qwen3-4b",
+        "bge-m3",
+        "e5-large",
+        "nomic-v2-moe",
+        "arctic-embed2",
+        "e5-large-instruct",
+    ]
     by_key = {candidate.key: candidate for candidate in CANDIDATES}
     assert by_key["qwen3-0.6b"].runtime == "fastembed"
     assert by_key["qwen3-0.6b"].dim == 1024
     assert by_key["qwen3-4b"].runtime == "ollama"
     assert by_key["qwen3-4b"].dim == 2560
     assert by_key["bge-m3"].runtime == "ollama"
-    assert by_key["e5-large"].runtime == "fastembed"
+    assert by_key["nomic-v2-moe"].runtime == "ollama"
+    assert by_key["nomic-v2-moe"].dim == 768
+    assert by_key["arctic-embed2"].runtime == "ollama"
+    assert by_key["arctic-embed2"].dim == 1024
+    assert by_key["e5-large-instruct"].runtime == "fastembed"
+    assert by_key["e5-large-instruct"].dim == 1024
 
 
 def test_qwen_prefixes_use_instruct_template() -> None:
@@ -122,6 +135,20 @@ def test_e5_uses_query_passage_prefixes_but_bge_does_not() -> None:
     bge = next(candidate for candidate in CANDIDATES if candidate.key == "bge-m3")
     assert bge.query_prefix is None
     assert bge.passage_prefix is None
+
+def test_new_candidates_use_official_prefixes() -> None:
+    nomic = next(candidate for candidate in CANDIDATES if candidate.key == "nomic-v2-moe")
+    assert nomic.query_prefix == "search_query: "
+    assert nomic.passage_prefix == "search_document: "
+
+    arctic = next(candidate for candidate in CANDIDATES if candidate.key == "arctic-embed2")
+    assert arctic.query_prefix == "query: "
+    assert arctic.passage_prefix is None
+
+    e5i = next(candidate for candidate in CANDIDATES if candidate.key == "e5-large-instruct")
+    assert e5i.query_prefix.startswith("Instruct: ")
+    assert "Query: " in e5i.query_prefix
+    assert e5i.passage_prefix is None
 
 
 def test_recommend_picks_best_passing_candidate() -> None:

@@ -16,6 +16,7 @@ Run with the benchmark venv (has fastembed + onnxruntime):
 from __future__ import annotations
 
 import argparse
+import contextlib
 import gc
 import json
 import shutil
@@ -46,6 +47,12 @@ QWEN3_INSTRUCT = (
 )
 E5_QUERY_PREFIX = "query: "
 E5_PASSAGE_PREFIX = "passage: "
+E5_INSTRUCT_TASK = "Given a food nutrition query, retrieve the most relevant food entries"
+E5_INSTRUCT_QUERY_PREFIX = f"Instruct: {E5_INSTRUCT_TASK}\nQuery: "
+
+NOMIC_QUERY_PREFIX = "search_query: "
+NOMIC_PASSAGE_PREFIX = "search_document: "
+ARCTIC_QUERY_PREFIX = "query: "
 
 FASTEMBED_CACHE_DIR = Path("/tmp/selfhost-bench-fastembed")
 OLLAMA_URL = "http://127.0.0.1:11434"
@@ -103,6 +110,33 @@ CANDIDATES: tuple[Candidate, ...] = (
         query_prefix=E5_QUERY_PREFIX,
         passage_prefix=E5_PASSAGE_PREFIX,
     ),
+    Candidate(
+        key="nomic-v2-moe",
+        label="nomic-embed-text-v2-moe",
+        runtime="ollama",
+        model="nomic-embed-text-v2-moe:latest",
+        dim=768,
+        query_prefix=NOMIC_QUERY_PREFIX,
+        passage_prefix=NOMIC_PASSAGE_PREFIX,
+    ),
+    Candidate(
+        key="arctic-embed2",
+        label="snowflake-arctic-embed2",
+        runtime="ollama",
+        model="snowflake-arctic-embed2:latest",
+        dim=1024,
+        query_prefix=ARCTIC_QUERY_PREFIX,
+        passage_prefix=None,
+    ),
+    Candidate(
+        key="e5-large-instruct",
+        label="multilingual-e5-large-instruct",
+        runtime="fastembed",
+        model="intfloat/multilingual-e5-large-instruct",
+        dim=1024,
+        query_prefix=E5_INSTRUCT_QUERY_PREFIX,
+        passage_prefix=None,
+    ),
 )
 
 
@@ -117,6 +151,33 @@ class EmbeddingClient(Protocol):
     def prefix_note(self) -> str: ...
 
 
+def _register_custom_model(model: str) -> None:
+    """Register ONNX models that ship in the HF repo itself (no Qdrant ONNX
+    mirror) so ``TextEmbedding`` can load them through its custom registry."""
+    if model != "intfloat/multilingual-e5-large-instruct":
+        return
+    from fastembed import TextEmbedding
+    from fastembed.common.model_description import ModelSource, PoolingType
+
+    with contextlib.suppress(ValueError):
+        # Already registered in this process (rerun/aggregation path).
+        TextEmbedding.add_custom_model(
+            model=model,
+            pooling=PoolingType.MEAN,
+            normalization=True,
+            sources=ModelSource(hf=model),
+            dim=1024,
+            model_file="onnx/model.onnx",
+            description=(
+                "Multilingual (~100 languages), 512 input tokens truncation, "
+                "instruction-tuned retrieval queries (2025)."
+            ),
+            license="mit",
+            size_in_gb=2.24,
+            additional_files=["onnx/model.onnx_data"],
+        )
+
+
 class FastembedClient:
     """fastembed ONNX client; prefixes applied here per model best practice."""
 
@@ -129,6 +190,7 @@ class FastembedClient:
     ) -> None:
         from fastembed import TextEmbedding
 
+        _register_custom_model(model)
         self._model = TextEmbedding(
             model_name=model,
             cache_dir=str(cache_dir),

@@ -5,13 +5,17 @@
 
 ## Objective
 
-Mengukur 4 kandidat embedding open-source yang di-self-host di host ini (2 vCPU,
+Mengukur 7 kandidat embedding open-source yang di-self-host di host ini (2 vCPU,
 ~5 GB RAM free, 11 GB disk, tanpa GPU) pada lima kueri PRD §7.3 dengan metrik
 Precision@5 + latensi, strategi `recursive`, dataset `data/tkpi-gi-final.jsonl`
 (1146 entri). Output: tabel perbandingan vs baseline OpenAI
 (`text-embedding-3-large`, P@5 = 0.800 — angka tersimpan, key mati, tidak
 di-re-run) plus rekomendasi model pengganti. **Tidak mengubah konfigurasi
 produksi.**
+
+Empat kandidat pertama dievaluasi pada iterasi 2026-10-19 (semua di bawah
+baseline: qwen3-0.6b 0.760, qwen3-4b 0.600, bge-m3 0.680, e5-large 0.760).
+Tiga kandidat berikutnya (Tier A) menutup selisih dengan baseline.
 
 ## Grid Kandidat
 
@@ -21,6 +25,9 @@ produksi.**
 | 2 | Qwen3-Embedding-4B | Ollama GGUF (`qwen3-embedding:4b`) | 2560 | 2.50 GB Q4 | `Instruct: …\nQuery: …` |
 | 3 | BGE-M3 | Ollama (`bge-m3:latest`) | 1024 | 1.16 GB | tidak ada (official dense usage) |
 | 4 | multilingual-e5-large | fastembed ONNX (Qdrant official) | 1024 | 2.24 GB fp32 | `query: ` / `passage: ` |
+| 5 | nomic-embed-text-v2-moe | Ollama official | 768 | ~0.96 GB | `search_query: ` / `search_document: ` |
+| 6 | snowflake-arctic-embed2 (568m) | Ollama official | 1024 | ~1.16 GB | `query: ` / tidak ada |
+| 7 | multilingual-e5-large-instruct | fastembed custom ONNX (HF official) | 1024 | 2.24 GB fp32 | `Instruct: …\nQuery: …` / tidak ada |
 
 > **Keputusan teknis:** BGE-M3 via Ollama, bukan fastembed — fastembed Python
 > 0.9.0 tidak mendukung BGE-M3 secara native (hanya fastembed-rs); jalur custom
@@ -28,6 +35,12 @@ produksi.**
 > model resmi di library Ollama. Model yang diuji tidak berubah.
 > ONNX Qwen3-4B fp32 = 16 GB → tidak muat; GGUF Q4 2.5 GB adalah satu-satunya
 > jalur viable (sesuai intent).
+> fastembed 0.9.0 tidak mendukung nomic v2 MoE maupun Arctic Embed 2 native;
+> keduanya dijalankan via model resmi Ollama. `multilingual-e5-large-instruct`
+> memakai custom registration (`TextEmbedding.add_custom_model`) terhadap ONNX
+> resmi di repo HF (mean pooling + L2 normalization, model.onnx + external data).
+> Model card e5-instruct menyatakan instruksi hanya di sisi query; dokumen tanpa
+> prefix. Arctic Embed 2 memakai prefix query `query: ` sesuai config resmi.
 
 ## Public API
 
@@ -57,7 +70,10 @@ produksi.**
 - `fastembed==0.9.0` + `onnxruntime>=1.23` — **di-install ke venv benchmark
   terpisah (`.venv-bench`), bukan ke requirements.txt produksi**
 - Ollama binary (user-level, tanpa systemd/root) + model
-  `qwen3-embedding:4b`, `bge-m3:latest` dari registry Ollama
+  `qwen3-embedding:4b`, `bge-m3:latest`, `nomic-embed-text-v2-moe:latest`,
+  `snowflake-arctic-embed2:latest` dari registry Ollama
+- `multilingual-e5-large-instruct` — ONNX dari repo HF resmi (folder
+  `onnx/`, ~2.24 GB external data), dimuat via `add_custom_model`
 - Download ONNX via hf-mirror (`HF_ENDPOINT=https://hf-mirror.com` — HF
   langsung 429 di host ini)
 
@@ -94,8 +110,9 @@ bukan semua kandidat sekaligus. `--keep-models` untuk inspeksi manual.
   gagal terus → `GAGAL` terdokumentasi
 - **Prefix model** diterapkan sesuai best practice masing-masing model
   (e5: `query:`/`passage:`; bge-m3: tanpa prefix; qwen3:
-  `Instruct: …\nQuery: …`); verifikasi
-  dicatat di raw log
+  `Instruct: …\nQuery: …`; nomic v2: `search_query:`/`search_document:`;
+  arctic-embed2: `query:` saja; e5-instruct: `Instruct: …\nQuery: …` saja);
+  verifikasi dicatat di raw log
 - **Disk tidak cukup** → model selesai dihapus sebelum pull berikutnya
   (default); `--keep-models` untuk inspeksi
 - **Dimensi berbeda antar kandidat** (1024 vs 2560) → collection terpisah per
@@ -106,7 +123,7 @@ bukan semua kandidat sekaligus. `--keep-models` untuk inspeksi manual.
 
 ## Acceptance Criteria
 
-- [ ] Empat kandidat dievaluasi (atau `GAGAL` terdokumentasi) pada 5 kueri
+- [ ] Tujuh kandidat dievaluasi (atau `GAGAL` terdokumentasi) pada 5 kueri
       PRD §7.3, strategi `recursive`, dataset 1146; setiap kandidat selesai
       dicatat lalu modelnya dihapus sebelum kandidat berikutnya dimuat
 - [ ] Raw log unedited `reports/logs/selfhost-raw.log`: timestamp, model,
