@@ -11,6 +11,7 @@ from app.config import Settings
 def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-123")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@host:5432/db")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.example.com:11434")
     monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com/v1")
     monkeypatch.setenv("LLM_API_KEY", "sk-test")
     monkeypatch.setenv("CHAT_MODEL_NAME", "gpt-4o")
@@ -45,6 +46,7 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.app_host == "0.0.0.0"
     assert s.app_port == 8000
     assert s.timezone == "Asia/Jakarta"
+    assert s.ollama_base_url == "http://ollama.example.com:11434"
     assert s.log_level == "INFO"
 
 
@@ -105,8 +107,9 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.llm_base_url == "https://your-llm-endpoint/v1"
     assert s.llm_api_key == "your-api-key"
     assert s.chat_model_name == "your-chat-model"
-    assert s.embedding_model_name == "your-embedding-model"
-    assert s.embedding_dim == 1536
+    assert s.ollama_base_url == "http://ollama:11434"
+    assert s.embedding_model_name == "snowflake-arctic-embed2"
+    assert s.embedding_dim == 1024
     assert s.rag_top_k == 5
     assert s.rag_candidate_k == 20
     assert s.llm_temperature == 0.0

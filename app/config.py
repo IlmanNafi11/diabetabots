@@ -28,12 +28,13 @@ class Settings(BaseSettings):
     # --- Telegram ---
     telegram_bot_token: str = "your-telegram-bot-token"
 
-    # --- LLM / embedding provider (OpenAI-compatible) ---
+    # --- LLM provider (OpenAI-compatible) + self-hosted embedding (Ollama) ---
     llm_base_url: str = "https://your-llm-endpoint/v1"
     llm_api_key: str = "your-api-key"
     chat_model_name: str = "your-chat-model"
-    embedding_model_name: str = "your-embedding-model"
-    embedding_dim: int = Field(default=1536, gt=0)
+    ollama_base_url: str = "http://ollama:11434"
+    embedding_model_name: str = "snowflake-arctic-embed2"
+    embedding_dim: int = Field(default=1024, gt=0)
     rag_top_k: int = Field(default=5, gt=0)
     # Retrieval candidate pool used to ground results against TKPI food names.
     # The service embeds the query, pulls this many nearest neighbours, then
