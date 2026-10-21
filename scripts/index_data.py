@@ -2,7 +2,7 @@
 
 Parses ``data/tkpi-gi-final.jsonl``, builds one embedding document per food
 entry using the chunking strategy decided by the Iterasi 0 spike, embeds them
-with the configured OpenAI-compatible embedding endpoint, and writes the
+with the self-hosted Ollama endpoint (``OllamaEmbedder``), and writes the
 result into the ``tkpi_gi`` collection. Expects 1.146 indexed entries.
 
 Usage:
@@ -19,11 +19,11 @@ from pathlib import Path
 from typing import Any
 
 import chromadb
-from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
 from app.data.embedder import EmbeddingClient, build_documents, index_documents
 from app.data.parser import load_records
+from app.services.ollama_embedder import OllamaEmbedder
 
 
 def index_dataset(
@@ -55,13 +55,7 @@ def index_dataset(
 
 
 def _create_embedder(settings: Settings) -> EmbeddingClient:
-    return OpenAIEmbeddings(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model=settings.embedding_model_name,
-        dimensions=settings.embedding_dim,
-        check_embedding_ctx_length=False,
-    )
+    return OllamaEmbedder(base_url=settings.ollama_base_url)
 
 
 def _write_log(path: Path, payload: dict[str, Any]) -> None:

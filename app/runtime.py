@@ -148,7 +148,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     ------
     RuntimeError
         When required credentials are still sentinel ``"your-*"`` values
-        (propagated from :class:`~app.services.rag_service.RAGService`).
+        (propagated from :class:`~app.services.llm_service.LLMService`).
     """
     settings = settings or Settings()
     engine = create_async_engine(settings)

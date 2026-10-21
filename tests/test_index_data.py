@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings
-from scripts.index_data import index_dataset
+from app.services.ollama_embedder import OllamaEmbedder
+from scripts.index_data import _create_embedder, index_dataset
 
 
 class FakeEmbeddingClient:
@@ -163,3 +164,11 @@ def test_index_dataset_rejects_unknown_strategy(dataset: Path, settings: Setting
             client=FakeClient(),
             embedder=FakeEmbeddingClient(),
         )
+
+
+def test_create_embedder_returns_ollama_embedder_from_settings(
+    settings: Settings,
+) -> None:
+    """``_create_embedder`` builds the self-hosted ``OllamaEmbedder``."""
+    embedder = _create_embedder(settings)
+    assert isinstance(embedder, OllamaEmbedder)

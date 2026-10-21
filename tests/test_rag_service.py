@@ -5,7 +5,9 @@ Tests here cover:
 - Construction: embedder + ChromaDB client are created eagerly; the collection
   is loaded lazily on first retrieve (the service may be constructed before
   indexing has run).
-- Sentinel credentials (``your-*`` values) raise RuntimeError at construction.
+- ``_make_embedder`` builds an ``OllamaEmbedder`` from settings; construction
+  succeeds even with a sentinel LLM API key (credential fail-fast is
+  ``LLMService``'s job, not ``RAGService``'s).
 - ``retrieve`` embeds the query, queries ChromaDB with ``n_results=top_k``,
   and maps the raw result to ``RetrievedFood`` objects.
 - ``build_retrieved_foods`` maps the raw ChromaDB query-result dict
@@ -23,6 +25,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.config import Settings
+from app.services.ollama_embedder import OllamaEmbedder
 from app.services.rag_service import (
     RAGService,
     RetrievedFood,
@@ -30,7 +34,6 @@ from app.services.rag_service import (
     build_retrieved_foods,
 )
 
-# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -39,9 +42,10 @@ from app.services.rag_service import (
 def mock_settings() -> MagicMock:
     """Minimal settings matching the real Settings fields used by RAGService."""
     s = MagicMock()
+    s.ollama_base_url = "http://ollama:11434"
     s.llm_base_url = "https://api.example.com/v1"
     s.llm_api_key = "test-key"
-    s.embedding_model_name = "text-embedding-3-large"
+    s.embedding_model_name = "snowflake-arctic-embed2"
     s.rag_top_k = 5
     s.rag_candidate_k = 20
     s.chunking_strategy = "recursive"
@@ -153,15 +157,30 @@ class TestRAGServiceConstruction:
         client.get_collection.assert_called_once_with(name=mock_settings.collection_name)
         assert service._collection is mock_collection
 
-    def test_raises_when_api_key_is_sentinel(self) -> None:
+    def test_constructs_with_sentinel_llm_api_key(self) -> None:
+        """RAGService no longer gates on the LLM sentinel key (LLMService does)."""
         with (
             patch.object(RAGService, "_make_embedder", return_value=MagicMock()),
             patch.object(RAGService, "_make_client", return_value=MagicMock()),
         ):
             sentinel_settings = MagicMock()
             sentinel_settings.llm_api_key = "your-api-key"
-            with pytest.raises(RuntimeError, match="sentinel"):
-                RAGService(settings=sentinel_settings)  # type: ignore[arg-type]
+            service = RAGService(settings=sentinel_settings)  # type: ignore[arg-type]
+        assert service.settings is sentinel_settings
+
+    def test_make_embedder_returns_ollama_embedder_from_settings(
+        self, mock_settings: MagicMock
+    ) -> None:
+        """``_make_embedder`` builds an ``OllamaEmbedder`` from settings."""
+        settings = Settings(
+            ollama_base_url="http://ollama-test:11434",
+            llm_api_key="test-key",
+            embedding_model_name="snowflake-arctic-embed2",
+        )
+        with patch.object(RAGService, "_make_client", return_value=MagicMock()):
+            service = RAGService(settings=settings)
+        embedder = service._embedder
+        assert isinstance(embedder, OllamaEmbedder)
 
 
 # ---------------------------------------------------------------------------

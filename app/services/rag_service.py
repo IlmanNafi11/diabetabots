@@ -21,8 +21,9 @@ formats top-k results as a readable string for LLM prompt injection.
 Dependencies
 ------------
 - ``chromadb.PersistentClient`` at ``Settings.chroma_persist_dir``.
-- ``langchain_openai.OpenAIEmbeddings`` (same configuration as
-  ``app/scripts/index_data.py``).
+- ``OllamaEmbedder`` (httpx → Ollama ``/api/embed``) at
+  ``Settings.ollama_base_url`` — self-hosted arctic replacement for
+  ``OpenAIEmbeddings`` (``app/services/ollama_embedder.py``).
 - ``Settings`` from ``app.config``.
 """
 
@@ -35,9 +36,9 @@ from typing import Any
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
+from app.services.ollama_embedder import OllamaEmbedder
 
 __all__ = [
     "RAGService",
@@ -115,24 +116,20 @@ class RetrievedFood:
 class RAGService:
     """RAG retrieval backed by the persistent ChromaDB collection.
 
-    Initialises once on construction: creates an ``OpenAIEmbeddings`` client
+    Initialises once on construction: creates an ``OllamaEmbedder`` client
     and a ``chromadb.PersistentClient`` pointing at the configured directory.
     The ChromaDB collection is loaded lazily on first ``retrieve`` call.
 
-    Raises
-    ------
-    RuntimeError
-        When the API key is still a sentinel ``"your-*"`` value, indicating
-        the environment has not been configured.
+    Credential fail-fast for the LLM API key happens in ``LLMService``, not
+    here — ``RAGService`` only needs the self-hosted Ollama endpoint.
     """
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or Settings()
-        self._check_credentials()
         # Embedder + ChromaDB client are created eagerly so that construction
         # fails fast on bad configuration; the collection is loaded lazily on
         # first retrieve (it may not exist yet right after a fresh checkout).
-        self._embedder: OpenAIEmbeddings = self._make_embedder()
+        self._embedder: OllamaEmbedder = self._make_embedder()
         self._client: chromadb.PersistentClient = self._make_client()
         self._collection: chromadb.Collection | None = None
 
@@ -185,19 +182,13 @@ class RAGService:
     # Internal helpers (overridable for testing)
     # ------------------------------------------------------------------
 
-    def _get_embedder(self) -> OpenAIEmbeddings:
+    def _get_embedder(self) -> OllamaEmbedder:
         if self._embedder is None:
             self._embedder = self._make_embedder()
         return self._embedder
 
-    def _make_embedder(self) -> OpenAIEmbeddings:
-        return OpenAIEmbeddings(
-            base_url=self._settings.llm_base_url,
-            api_key=self._settings.llm_api_key,
-            model=self._settings.embedding_model_name,
-            dimensions=self._settings.embedding_dim,
-            check_embedding_ctx_length=False,
-        )
+    def _make_embedder(self) -> OllamaEmbedder:
+        return OllamaEmbedder(base_url=self._settings.ollama_base_url)
 
     def _get_collection(self) -> chromadb.Collection:
         if self._collection is None:
@@ -215,14 +206,6 @@ class RAGService:
             path=self._settings.chroma_persist_dir,
             settings=ChromaSettings(allow_reset=False),
         )
-
-    def _check_credentials(self) -> None:
-        sentinel = self._settings.llm_api_key.startswith("your-")
-        if sentinel:
-            raise RuntimeError(
-                "RAGService: LLM API key is a sentinel value. "
-                "Set OPENAI_API_KEY (or the equivalent in your .env) before use."
-            )
 
 
 # ---------------------------------------------------------------------------
