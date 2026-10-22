@@ -311,8 +311,10 @@ class TelegramUpdateHandler:
     async def _analyze_and_send(self, chat_id: int, food_query: str, gram: float) -> None:
         """Run RAG → LLM → store pending → send with Ya/Tidak buttons."""
         try:
-            # Retrieve from ChromaDB
-            retrieved = self._rag_svc.retrieve(food_query, top_k=5)
+            # ``retrieve_async`` offloads the blocking embed + ChromaDB call
+            # to a worker thread, so a stalled Ollama endpoint cannot freeze
+            # the bot's event loop (or trip the container healthcheck).
+            retrieved = await self._rag_svc.retrieve_async(food_query, 5)
             if not retrieved:
                 await self._send(
                     chat_id,
@@ -388,10 +390,12 @@ class TelegramUpdateHandler:
                 text=analysis_text,
                 inline_keyboard=build_confirm_keyboard(pending.id),
             )
-
         except Exception as exc:
             log.exception("Analysis failed for chat %s: %s", chat_id, exc)
-            await self._send(chat_id, f"Maaf, analisis gagal: {exc}")
+            await self._send(
+                chat_id,
+                "Maaf, analisis gagal sementara. Silakan coba lagi beberapa saat.",
+            )
 
     # ------------------------------------------------------------------
     # Callback handlers

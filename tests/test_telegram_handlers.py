@@ -140,7 +140,7 @@ def mock_energy_svc() -> AsyncMock:
 @pytest.fixture()
 def mock_rag_svc() -> MagicMock:
     svc = MagicMock()
-    svc.retrieve = MagicMock(
+    svc.retrieve_async = AsyncMock(
         return_value=[
             RetrievedFood(
                 record_id="doc-1",
@@ -391,7 +391,7 @@ class TestFoodQuery:
         await handler.handle_update(update)
 
         # RAG should be queried
-        mock_rag_svc.retrieve.assert_called()
+        mock_rag_svc.retrieve_async.assert_awaited()
         # LLM should be called
         mock_llm_svc.analyze_food.assert_awaited()
         # Should send message with inline buttons
@@ -420,7 +420,7 @@ class TestFoodQuery:
         handler._conversation_manager.accept_height(12345, 175.0)
         handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
 
-        mock_rag_svc.retrieve.return_value = [
+        mock_rag_svc.retrieve_async.return_value = [
             RetrievedFood(
                 record_id="doc-bdd-1",
                 name="Buah naga merah, segar",
@@ -482,7 +482,7 @@ class TestFoodQuery:
         handler._conversation_manager.accept_weight(12345, 70.0)
         handler._conversation_manager.accept_height(12345, 175.0)
         handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
-        mock_rag_svc.retrieve.return_value = []
+        mock_rag_svc.retrieve_async.return_value = []
 
         await handler.handle_update(_make_message_update(text="sayur aster 100g", update_id=9))
 

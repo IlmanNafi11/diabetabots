@@ -10,9 +10,10 @@ from app.database import create_async_engine, get_db, init_db
 
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(
-        database_url="postgresql+asyncpg://diabetabot:diabetabot@localhost:5432/diabetabot_test",
-    )
+    """Use the shared test database URL so CI/local runs stay configurable."""
+    from tests.conftest import TEST_DATABASE_URL
+
+    return Settings(database_url=TEST_DATABASE_URL)
 
 
 @pytest.mark.asyncio

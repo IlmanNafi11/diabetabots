@@ -18,7 +18,7 @@ Public API
 
 Dependencies
 ------------
-- ``httpx`` (sync client, one-shot ``post`` per call).
+- ``httpx`` (sync client, reused per instance — one TCP connection pool).
 - Model served by Ollama at ``Settings.ollama_base_url``.
 """
 
@@ -37,24 +37,44 @@ class OllamaEmbedder:
         base_url: str,
         model: str = "snowflake-arctic-embed2:latest",
         read_timeout_seconds: float = 600.0,
+        *,
+        client: httpx.Client | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._read_timeout_seconds = read_timeout_seconds
-
-    def _embed(self, texts: list[str]) -> list[list[float]]:
-        response = httpx.post(
-            f"{self._base_url}/api/embed",
-            json={"model": self._model, "input": list(texts)},
+        self._owns_client = client is None
+        self._client = client or httpx.Client(
+            base_url=self._base_url,
             timeout=httpx.Timeout(
                 connect=10.0,
-                read=self._read_timeout_seconds,
+                read=read_timeout_seconds,
                 write=30.0,
                 pool=10.0,
             ),
         )
+
+    def close(self) -> None:
+        """Release the internally owned HTTP connection pool."""
+        if self._owns_client:
+            self._client.close()
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        response = self._client.post(
+            "/api/embed", json={"model": self._model, "input": list(texts)}
+        )
         response.raise_for_status()
-        return [list(map(float, vector)) for vector in response.json()["embeddings"]]
+        payload = response.json()
+        if not isinstance(payload, dict) or "embeddings" not in payload:
+            raise ValueError(
+                f"Ollama response missing 'embeddings' key: {payload!r:.200}"
+            )
+        vectors = payload["embeddings"]
+        if len(vectors) != len(texts):
+            raise ValueError(
+                f"Ollama returned {len(vectors)} embeddings for {len(texts)} inputs"
+            )
+        return [list(map(float, vector)) for vector in vectors]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed documents as-is — no passage prefix."""

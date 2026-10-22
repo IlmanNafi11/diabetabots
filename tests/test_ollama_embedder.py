@@ -1,5 +1,8 @@
 """Tests for app/services/ollama_embedder.py — OllamaEmbedder client."""
 
+import json
+from typing import Any
+
 import httpx
 import pytest
 
@@ -9,39 +12,52 @@ _BASE_URL = "http://localhost:11434"
 _MODEL = "snowflake-arctic-embed2"
 
 
-def _fake_post_response(embeddings: list[list[float]]):
-    """Return a fake ``httpx.post`` that captures the request and answers."""
+def _capturing_client(
+    status_code: int = 200,
+    payload: dict[str, Any] | None = None,
+    captured: dict[str, Any] | None = None,
+    transport_exception: Exception | None = None,
+) -> httpx.Client:
+    """Build an ``httpx.Client`` whose transport records requests and replies."""
 
-    def fake_post(url: str, *, json: dict, timeout: httpx.Timeout) -> httpx.Response:
-        captured["url"] = url
-        captured["json"] = json
-        captured["timeout"] = timeout
-        request = httpx.Request("POST", url)
-        return httpx.Response(200, json={"embeddings": embeddings}, request=request)
+    def handler(request: httpx.Request) -> httpx.Response:
+        if transport_exception is not None:
+            raise transport_exception
+        if captured is not None:
+            captured["url"] = str(request.url)
+            captured["json"] = json.loads(request.content)
+        body = {} if payload is None else payload
+        return httpx.Response(status_code, json=body)
 
-    captured: dict[str, object] = {}
-    return fake_post, captured
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url=_BASE_URL)
 
-
-def test_constructor_performs_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Constructing the embedder must not touch the network (errors surface later)."""
-
-    def fail(*args: object, **kwargs: object) -> None:
-        raise AssertionError("network call during construction")
-
-    monkeypatch.setattr(httpx, "post", fail)
-
-    OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
+def _embedder(client: httpx.Client, **kwargs: Any) -> OllamaEmbedder:
+    kwargs.setdefault("model", _MODEL)
+    return OllamaEmbedder(base_url=_BASE_URL, client=client, **kwargs)
 
 
-def test_embed_query_sends_prefixed_input_to_embed_endpoint(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_constructor_performs_no_network() -> None:
+    """Constructing the embedder must not touch the network."""
+
+    class _ExplodingTransport(httpx.BaseTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            raise AssertionError("network call during construction")
+
+    OllamaEmbedder(
+        base_url=_BASE_URL,
+        client=httpx.Client(transport=_ExplodingTransport()),
+    )
+
+
+def test_embed_query_sends_prefixed_input_to_embed_endpoint() -> None:
     """Queries are prefixed with ``"query: "`` per the arctic embed2 config."""
-    fake_post, captured = _fake_post_response([[0.1, 0.2, 0.3]])
-    monkeypatch.setattr(httpx, "post", fake_post)
+    captured: dict[str, Any] = {}
+    embedder = _embedder(
+        _capturing_client(
+            payload={"embeddings": [[0.1, 0.2, 0.3]]}, captured=captured
+        )
+    )
 
-    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
     vector = embedder.embed_query("nasi putih")
 
     assert vector == [0.1, 0.2, 0.3]
@@ -49,51 +65,120 @@ def test_embed_query_sends_prefixed_input_to_embed_endpoint(
     assert captured["json"] == {"model": _MODEL, "input": ["query: nasi putih"]}
 
 
-def test_embed_documents_sends_texts_without_prefix(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_embed_documents_sends_texts_without_prefix() -> None:
     """Documents are embedded as-is — no passage prefix."""
-    fake_post, captured = _fake_post_response([[0.1], [0.2]])
-    monkeypatch.setattr(httpx, "post", fake_post)
+    captured: dict[str, Any] = {}
+    embedder = _embedder(
+        _capturing_client(
+            payload={"embeddings": [[0.1], [0.2]]}, captured=captured
+        )
+    )
 
-    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
     vectors = embedder.embed_documents(["nasi putih", "ayam goreng"])
 
     assert vectors == [[0.1], [0.2]]
     assert captured["json"] == {"model": _MODEL, "input": ["nasi putih", "ayam goreng"]}
 
 
-def test_custom_read_timeout_is_applied(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_post, captured = _fake_post_response([[0.1]])
-    monkeypatch.setattr(httpx, "post", fake_post)
-
+def test_custom_read_timeout_is_applied() -> None:
+    """A non-default read timeout must reach the HTTP layer."""
     embedder = OllamaEmbedder(
         base_url=_BASE_URL,
         model=_MODEL,
-        read_timeout_seconds=600.0,
+        read_timeout_seconds=999.5,
     )
-    embedder.embed_query("nasi putih")
 
-    assert captured["timeout"].read == 600.0
+    assert embedder._client.timeout.read == 999.5
+    embedder.close()
 
 
-def test_base_url_trailing_slash_is_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_post, captured = _fake_post_response([[0.1]])
-    monkeypatch.setattr(httpx, "post", fake_post)
+def test_default_read_timeout_is_used_when_not_specified() -> None:
+    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
 
-    embedder = OllamaEmbedder(base_url=f"{_BASE_URL}/", model=_MODEL)
+    assert embedder._client.timeout.read == 600.0
+    embedder.close()
+
+
+def test_base_url_trailing_slash_is_normalized() -> None:
+    captured: dict[str, Any] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"embeddings": [[0.1]]})
+
+    embedder = OllamaEmbedder(
+        base_url=f"{_BASE_URL}/",
+        model=_MODEL,
+        client=httpx.Client(transport=httpx.MockTransport(handler), base_url=f"{_BASE_URL}/"),
+    )
     embedder.embed_query("x")
 
     assert captured["url"] == f"{_BASE_URL}/api/embed"
 
+def test_embed_query_raises_on_http_error() -> None:
+    embedder = _embedder(_capturing_client(status_code=500, payload={"error": "model not found"}))
 
-def test_embed_query_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_post(url: str, *, json: dict, timeout: httpx.Timeout) -> httpx.Response:
-        request = httpx.Request("POST", url)
-        return httpx.Response(500, json={"error": "model not found"}, request=request)
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-
-    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
     with pytest.raises(httpx.HTTPStatusError):
+        embedder.embed_query("x")
+
+
+def test_embed_documents_raises_on_http_error() -> None:
+    embedder = _embedder(_capturing_client(status_code=404, payload={"error": "not found"}))
+
+    with pytest.raises(httpx.HTTPStatusError):
+        embedder.embed_documents(["x"])
+
+
+def test_connect_error_propagates() -> None:
+    embedder = _embedder(
+        _capturing_client(transport_exception=httpx.ConnectError("connection refused"))
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        embedder.embed_query("x")
+
+
+def test_read_timeout_propagates() -> None:
+    embedder = _embedder(_capturing_client(transport_exception=httpx.ReadTimeout("timed out")))
+
+    with pytest.raises(httpx.ReadTimeout):
+        embedder.embed_query("x")
+
+
+def test_missing_embeddings_key_raises_value_error() -> None:
+    embedder = _embedder(_capturing_client(payload={"unexpected": "shape"}))
+
+    with pytest.raises(ValueError, match="missing 'embeddings'"):
+        embedder.embed_query("x")
+
+
+def test_non_list_embeddings_raises_value_error() -> None:
+    embedder = _embedder(_capturing_client(payload={"embeddings": "nope"}))
+
+    with pytest.raises(ValueError):
+        embedder.embed_query("x")
+
+
+def test_embedding_count_mismatch_raises_value_error() -> None:
+    embedder = _embedder(_capturing_client(payload={"embeddings": [[0.1], [0.2]]}))
+
+    with pytest.raises(ValueError, match="for 1 input"):
+        embedder.embed_query("x")
+
+
+def test_non_numeric_embeddings_raise_value_error() -> None:
+    embedder = _embedder(_capturing_client(payload={"embeddings": [["not", "a", "number"]]}))
+
+    with pytest.raises(ValueError, match="float"):
+        embedder.embed_query("x")
+
+
+def test_malformed_json_raises_value_error() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"not json")),
+        base_url=_BASE_URL,
+    )
+    embedder = _embedder(client)
+
+    with pytest.raises(ValueError):
         embedder.embed_query("x")

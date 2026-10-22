@@ -175,12 +175,32 @@ class TestRAGServiceConstruction:
         settings = Settings(
             ollama_base_url="http://ollama-test:11434",
             llm_api_key="test-key",
-            embedding_model_name="snowflake-arctic-embed2",
+            embedding_model_name="custom-model:7b",
+            ollama_query_read_timeout_seconds=12.5,
         )
         with patch.object(RAGService, "_make_client", return_value=MagicMock()):
             service = RAGService(settings=settings)
         embedder = service._embedder
         assert isinstance(embedder, OllamaEmbedder)
+        assert embedder._base_url == "http://ollama-test:11434"
+        assert embedder._model == "custom-model:7b"
+        assert embedder._client.timeout.read == 12.5
+
+    @pytest.mark.asyncio()
+    async def test_retrieve_async_offloads_blocking_retrieve(
+        self, mock_settings: MagicMock
+    ) -> None:
+        expected = [make_food(1)]
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=MagicMock()),
+            patch.object(RAGService, "_make_client", return_value=MagicMock()),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+        with patch.object(service, "retrieve", return_value=expected) as retrieve:
+            result = await service.retrieve_async("nasi", 5)
+
+        assert result == expected
+        retrieve.assert_called_once_with("nasi", 5, None)
 
 
 # ---------------------------------------------------------------------------

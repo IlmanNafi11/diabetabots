@@ -33,10 +33,16 @@ class Settings(BaseSettings):
     llm_api_key: str = "your-api-key"
     chat_model_name: str = "your-chat-model"
     ollama_base_url: str = "http://ollama:11434"
+    # A single interactive query (one document) should answer fast: when the
+    # endpoint stalls, the sync embed call must fail quickly so the Telegram
+    # handler's worker thread is not pinned and the container healthcheck
+    # stays responsive.
+    ollama_query_read_timeout_seconds: float = Field(default=30.0, gt=0)
     # Embedding inference is CPU-bound; a full 100-document batch can take
-    # minutes on slower hosts, so the read timeout must exceed that.
-    ollama_read_timeout_seconds: float = Field(default=600.0, gt=0)
-    embedding_model_name: str = "snowflake-arctic-embed2"
+    # minutes on slower hosts, so the batch (indexing/migration) read timeout
+    # must exceed that.
+    ollama_batch_read_timeout_seconds: float = Field(default=600.0, gt=0)
+    embedding_model_name: str = "snowflake-arctic-embed2:latest"
     embedding_dim: int = Field(default=1024, gt=0)
     rag_top_k: int = Field(default=5, gt=0)
     # Retrieval candidate pool used to ground results against TKPI food names.
@@ -59,6 +65,16 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, gt=0, le=65535)
     timezone: str = "Asia/Jakarta"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def _require_ollama_url(cls, value: str) -> str:
+        """Fail fast on a malformed Ollama endpoint (e.g. missing scheme)."""
+        if not (
+            value.startswith("http://") or value.startswith("https://")
+        ) or len(value) <= len("http://"):
+            raise ValueError("ollama_base_url must be an http(s):// URL with a host")
+        return value
 
     @field_validator("database_url")
     @classmethod

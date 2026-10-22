@@ -169,6 +169,16 @@ def test_index_dataset_rejects_unknown_strategy(dataset: Path, settings: Setting
 def test_create_embedder_returns_ollama_embedder_from_settings(
     settings: Settings,
 ) -> None:
-    """``_create_embedder`` builds the self-hosted ``OllamaEmbedder``."""
-    embedder = _create_embedder(settings)
+    """``_create_embedder`` builds the self-hosted ``OllamaEmbedder`` with batch settings."""
+    custom = settings.model_copy(
+        update={
+            "ollama_base_url": "http://batch-host:11434",
+            "embedding_model_name": "custom-model:7b",
+            "ollama_batch_read_timeout_seconds": 900.0,
+        }
+    )
+    embedder = _create_embedder(custom)
     assert isinstance(embedder, OllamaEmbedder)
+    assert embedder._base_url == "http://batch-host:11434"
+    assert embedder._model == "custom-model:7b"
+    assert embedder._client.timeout.read == 900.0

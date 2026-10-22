@@ -29,6 +29,7 @@ Dependencies
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -149,6 +150,9 @@ class RAGService:
     ) -> list[RetrievedFood]:
         """Retrieve the ``top_k`` most relevant food entries for ``query``.
 
+        Synchronous and blocking: embeds ``query``, queries ChromaDB for the
+        candidate pool, then grounds and ranks the results.
+
         Parameters
         ----------
         query:
@@ -178,19 +182,33 @@ class RAGService:
         )
         return rank_retrieved_foods(build_retrieved_foods(raw), query, limit=requested)
 
+    async def retrieve_async(
+        self,
+        query: str,
+        top_k: int | None = None,
+        where: dict[str, Any] | None = None,
+    ) -> list[RetrievedFood]:
+        """Run the blocking :meth:`retrieve` in a worker thread.
+
+        The embed call and ChromaDB query are synchronous I/O; running them on
+        the event loop would block the whole bot for the duration of one Ollama
+        request (up to the read timeout).
+        """
+        return await asyncio.to_thread(self.retrieve, query, top_k, where)
+
     # ------------------------------------------------------------------
     # Internal helpers (overridable for testing)
     # ------------------------------------------------------------------
 
     def _get_embedder(self) -> OllamaEmbedder:
-        if self._embedder is None:
-            self._embedder = self._make_embedder()
         return self._embedder
 
     def _make_embedder(self) -> OllamaEmbedder:
+        """Interactive embedder: fast-fail read timeout, never the batch one."""
         return OllamaEmbedder(
             base_url=self._settings.ollama_base_url,
-            read_timeout_seconds=self._settings.ollama_read_timeout_seconds,
+            model=self._settings.embedding_model_name,
+            read_timeout_seconds=self._settings.ollama_query_read_timeout_seconds,
         )
 
     def _get_collection(self) -> chromadb.Collection:
@@ -200,8 +218,6 @@ class RAGService:
         return self._collection
 
     def _get_client(self) -> chromadb.PersistentClient:
-        if self._client is None:
-            self._client = self._make_client()
         return self._client
 
     def _make_client(self) -> chromadb.PersistentClient:

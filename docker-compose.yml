@@ -45,7 +45,9 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
-    restart: unless-stopped
+    mem_limit: 12g
+    cpus: 4.0
+    pids_limit: 100
 
   # One-shot model pull: fetches the embedding model once and exits. The app
   # starts only after this succeeds, so the first embedding call never races
@@ -58,7 +60,9 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-    restart: "no"
+    restart: on-failure
+    mem_limit: 2g
+    cpus: 1.0
 
 volumes:
   pg_data:

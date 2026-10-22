@@ -1,9 +1,9 @@
 """Document building and indexing into ChromaDB (task-07).
 
-Builds one embedding document per food record using the chunking strategy
-decided by the Iterasi 0 spike (recursive x text-embedding-3-large), embeds
-them through the configured embedding client, and writes them to the
-persistent ChromaDB collection.
+Builds one embedding document per food record using the recursive chunking
+strategy, embeds them through the configured embedding client (self-hosted
+Ollama ``snowflake-arctic-embed2``), and writes them to the persistent
+ChromaDB collection.
 """
 
 from __future__ import annotations

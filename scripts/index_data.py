@@ -25,6 +25,8 @@ from app.data.embedder import EmbeddingClient, build_documents, index_documents
 from app.data.parser import load_records
 from app.services.ollama_embedder import OllamaEmbedder
 
+EXPECTED_DOCUMENT_COUNT = 1146
+
 
 def index_dataset(
     *,
@@ -57,7 +59,8 @@ def index_dataset(
 def _create_embedder(settings: Settings) -> EmbeddingClient:
     return OllamaEmbedder(
         base_url=settings.ollama_base_url,
-        read_timeout_seconds=settings.ollama_read_timeout_seconds,
+        model=settings.embedding_model_name,
+        read_timeout_seconds=settings.ollama_batch_read_timeout_seconds,
     )
 
 
@@ -108,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(f"Indexed {count} documents into {settings.collection_name!r}")
 
-    expected = 1146
+    expected = EXPECTED_DOCUMENT_COUNT
     if count != expected:
         print(
             f"WARNING: expected {expected} entries, collection holds {count}",

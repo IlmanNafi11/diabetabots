@@ -80,6 +80,7 @@ def test_external_ollama_override_resets_services_and_requires_base_url() -> Non
 
     assert "ollama: !reset null" in override
     assert "ollama-init: !reset null" in override
+    assert "condition: service_healthy" in override
     assert "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}" in override
 
 
@@ -87,5 +88,7 @@ def test_env_example_documents_ollama_embedding_defaults() -> None:
     env = (ROOT / ".env.example").read_text()
 
     assert "OLLAMA_BASE_URL=http://ollama:11434" in env
-    assert "EMBEDDING_MODEL_NAME=snowflake-arctic-embed2" in env
+    assert "OLLAMA_QUERY_READ_TIMEOUT_SECONDS=30" in env
+    assert "OLLAMA_BATCH_READ_TIMEOUT_SECONDS=600" in env
+    assert "EMBEDDING_MODEL_NAME=snowflake-arctic-embed2:latest" in env
     assert "EMBEDDING_DIM=1024" in env

@@ -61,7 +61,8 @@ def indexed_collection(
     documents = build_documents(records, settings.chunking_strategy)
     embedder = OllamaEmbedder(
         base_url=settings.ollama_base_url,
-        read_timeout_seconds=settings.ollama_read_timeout_seconds,
+        model=settings.embedding_model_name,
+        read_timeout_seconds=settings.ollama_batch_read_timeout_seconds,
     )
     index_documents(documents, collection, embedder)
     return collection, embedder
