@@ -1,6 +1,6 @@
 # Spec: embedding-arctic-migration
 
-**Status:** In Progress (approved 2026-10-22; Tasks 1–5 done) ·
+**Status:** Implemented (2026-10-22) ·
 **Intent ref:** `docs/intent/arctic-embedding-migration.md` (confirmed 2026-10-22)
 **Branch:** `dev` · **Plan ref:** tasks/plan.md (arctic migration)
 
@@ -19,23 +19,22 @@ matches the binding baseline (mean P@5 = 0.800 on the five PRD §7.3 queries,
 so the current production path is not queryable anyway.
 
 **Success criteria**
-
-- [ ] `RAGService` and `scripts/index_data.py` embed via a self-hosted Ollama
+- [x] `RAGService` and `scripts/index_data.py` embed via a self-hosted Ollama
       client (`/api/embed`, `snowflake-arctic-embed2:latest`, query prefix
       `"query: "`), no `OpenAIEmbeddings` in the production embedding path.
-- [ ] `tkpi_gi` collection re-indexed in place: 1146 documents, 1024 dim,
+- [x] `tkpi_gi` collection re-indexed in place: 1146 documents, 1024 dim,
       cosine space; raw log `reports/logs/indexing-raw.log` records the
       migration run (document_count 1146).
-- [ ] Integration tests (retrieval P@5, nutrition accuracy) pass against the
+- [x] Integration tests (retrieval P@5, nutrition accuracy) pass against the
       migrated `tkpi_gi` and skip when Ollama is unreachable.
-- [ ] 10 PRD §7.3 E2E scenarios PASS against the migrated `tkpi_gi`
+- [x] 10 PRD §7.3 E2E scenarios PASS against the migrated `tkpi_gi`
       (`scripts/run_e2e.py`, unmodified).
-- [ ] `docker compose up -d` starts app + postgres + ollama + one-shot init
+- [x] `docker compose up -d` starts app + postgres + ollama + one-shot init
       (pulls `snowflake-arctic-embed2` into a named volume) and the app waits
       for the init service to complete; external instances selectable via
       compose overrides (postgres, ollama, or both).
-- [ ] Migration report written to `reports/` (not committed; `reports/` is
-      gitignored) documenting snapshot → drop → reindex → verification.
+- [x] Migration report written to `reports/` (not committed; `reports/` is
+      gitignored) documenting snapshot -> drop -> reindex -> verification.
 
 ## Capability Map
 
