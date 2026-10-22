@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -133,6 +134,10 @@ class RAGService:
         self._embedder: OllamaEmbedder = self._make_embedder()
         self._client: chromadb.PersistentClient = self._make_client()
         self._collection: chromadb.Collection | None = None
+        # ``retrieve_async`` fans out to worker threads; the lazy collection
+        # load must happen exactly once (double get_collection on a fresh
+        # directory races and one caller can hit a missing-collection error).
+        self._collection_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -213,8 +218,10 @@ class RAGService:
 
     def _get_collection(self) -> chromadb.Collection:
         if self._collection is None:
-            client = self._get_client()
-            self._collection = client.get_collection(name=self._settings.collection_name)
+            with self._collection_lock:
+                if self._collection is None:
+                    client = self._get_client()
+                    self._collection = client.get_collection(name=self._settings.collection_name)
         return self._collection
 
     def _get_client(self) -> chromadb.PersistentClient:
@@ -225,6 +232,11 @@ class RAGService:
             path=self._settings.chroma_persist_dir,
             settings=ChromaSettings(allow_reset=False),
         )
+
+    def close(self) -> None:
+        """Release the process-lifetime HTTP pool and ChromaDB client."""
+        self._embedder.close()
+        self._client.clear_system_cache()
 
 
 # ---------------------------------------------------------------------------

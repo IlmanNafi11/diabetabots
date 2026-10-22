@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -60,12 +60,6 @@ class MessageUpdate:
         if self.text is None:
             return False
         return self.text.split()[0] == command
-
-    def is_command_with(self, command: str) -> bool:
-        """Return True if this message starts with ``command`` (with args allowed)."""
-        if self.text is None:
-            return False
-        return self.text.startswith(command)
 
 
 @dataclass(slots=True, frozen=True)
@@ -174,7 +168,6 @@ class TelegramService:
         )
         self._running = False
         self._offset: int | None = None
-        self._seen_update_ids: set[int] = field(default_factory=set)
 
     # ------------------------------------------------------------------
     # Polling
@@ -203,10 +196,10 @@ class TelegramService:
                     try:
                         # on_update must be an awaitable callable
                         asyncio.run(on_update(update))
-                    except Exception as exc:
-                        log.exception("on_update handler raised: %s", exc)
-            except Exception as exc:
-                log.error("Polling loop error: %s. Retrying…", exc)
+                    except Exception:
+                        log.error("on_update handler failed")
+            except Exception:
+                log.error("Polling loop failed; retrying")
                 continue
 
         log.info("Telegram polling stopped.")
@@ -216,30 +209,12 @@ class TelegramService:
         self._running = False
         log.info("Telegram polling stop requested.")
 
-    async def poll_once(
-        self,
-        on_update: Any,
-        *,
-        timeout: int = 5,
-    ) -> list[TelegramUpdate]:
-        """Poll once (non-blocking for use in async contexts)."""
-        updates = await self._fetch_updates(timeout=timeout, offset=self._offset)
-        handled = []
-        for update in updates:
-            self._offset = update.update_id + 1
-            try:
-                await on_update(update)
-                handled.append(update)
-            except Exception as exc:
-                log.exception("on_update handler raised: %s", exc)
-        return handled
-
     def _poll_loop(self, timeout: int) -> list[TelegramUpdate]:
         """Single poll iteration with retry."""
         try:
             return asyncio.run(self._fetch_updates_with_retry(timeout=timeout, offset=self._offset))
-        except Exception as exc:
-            log.error("Poll failed after retries: %s", exc)
+        except Exception:
+            log.error("Poll failed after retries")
             return []
 
     async def _fetch_updates_with_retry(
@@ -251,17 +226,16 @@ class TelegramService:
         for attempt in range(self._max_retries):
             try:
                 return await self._fetch_updates(timeout=timeout, offset=offset)
-            except Exception as exc:
+            except Exception:
                 delay = (
                     _BACKOFF_DELAYS[attempt]
                     if attempt < len(_BACKOFF_DELAYS)
                     else _BACKOFF_DELAYS[-1]
                 )
                 log.warning(
-                    "getUpdates attempt %d/%d failed (%s). Retrying in %.0f s…",
+                    "getUpdates attempt %d/%d failed; retrying in %.0f s",
                     attempt + 1,
                     self._max_retries,
-                    exc,
                     delay,
                 )
                 if attempt < self._max_retries - 1:
@@ -286,12 +260,6 @@ class TelegramService:
         if not body.get("ok"):
             raise RuntimeError(f"Telegram API error: {body.get('description', body)}")
         return [TelegramUpdate.from_dict(u) for u in body.get("result", [])]
-
-    def _get_next_offset(self, updates: list[TelegramUpdate]) -> int | None:
-        """Return the next offset to pass after processing these updates."""
-        if not updates:
-            return self._offset
-        return max(u.update_id for u in updates) + 1
 
     # ------------------------------------------------------------------
     # Send helpers
@@ -385,25 +353,6 @@ class TelegramService:
                 f"Telegram API error {body.get('error_code')}: {body.get('description', body)}"
             )
         return body.get("result", {})
-
-    async def answer_callback_query(
-        self,
-        callback_query_id: str,
-        *,
-        text: str | None = None,
-        show_alert: bool = False,
-    ) -> dict[str, Any]:
-        """Send an answer to a callback query (acknowledge button press)."""
-        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
-        if text is not None:
-            payload["text"] = text
-            payload["show_alert"] = show_alert
-        response = self._client.post(
-            f"{self._base_url}/answerCallbackQuery",
-            json=payload,
-        )
-        response.raise_for_status()
-        return response.json().get("result", {})
 
     # ------------------------------------------------------------------
     # Health check

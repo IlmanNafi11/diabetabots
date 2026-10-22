@@ -31,13 +31,17 @@ SPIKE_THRESHOLD = 0.800  # Binding Iterasi 0 result — reports/laporan-spike-20
 
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings()
+    from tests.conftest import make_test_settings
+
+    return make_test_settings()
 
 
 @pytest.fixture()
 def _skip_when_ollama_unreachable() -> None:
     """Skip when the configured Ollama endpoint does not answer ``/api/version``."""
-    settings = Settings()
+    from tests.conftest import make_test_settings
+
+    settings = make_test_settings()
     try:
         httpx.get(
             f"{settings.ollama_base_url.rstrip('/')}/api/version",

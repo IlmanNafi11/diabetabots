@@ -11,7 +11,7 @@ from app.config import Settings
 def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token-123")
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://user:pass@host:5432/db")
-    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.example.com:11434")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
     monkeypatch.setenv("OLLAMA_QUERY_READ_TIMEOUT_SECONDS", "12.5")
     monkeypatch.setenv("OLLAMA_BATCH_READ_TIMEOUT_SECONDS", "900")
     monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com/v1")
@@ -48,7 +48,7 @@ def test_settings_loads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.app_host == "0.0.0.0"
     assert s.app_port == 8000
     assert s.timezone == "Asia/Jakarta"
-    assert s.ollama_base_url == "http://ollama.example.com:11434"
+    assert s.ollama_base_url == "http://localhost:11434"
     assert s.ollama_query_read_timeout_seconds == 12.5
     assert s.ollama_batch_read_timeout_seconds == 900.0
     assert s.log_level == "INFO"
@@ -118,19 +118,19 @@ def test_settings_rejects_invalid_ollama_timeouts(
 
 
 def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify defaults match .env.example values."""
+    """Verify defaults match .env.example values (sentinel credentials rejected)."""
     # Clear all env vars so defaults apply
     for key in list(os.environ):
         if key.isupper():
             monkeypatch.delenv(key, raising=False)
 
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
 
     s = Settings(_env_file=None)
-
-    assert s.telegram_bot_token == "your-telegram-bot-token"
-    assert s.llm_base_url == "https://your-llm-endpoint/v1"
-    assert s.llm_api_key == "your-api-key"
+    assert s.llm_api_key == "real-key"
+    assert s.telegram_bot_token == "real-token"
     assert s.chat_model_name == "your-chat-model"
     assert s.ollama_base_url == "http://ollama:11434"
     assert s.embedding_model_name == "snowflake-arctic-embed2:latest"
@@ -147,3 +147,63 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.app_port == 8000
     assert s.timezone == "Asia/Jakarta"
     assert s.log_level == "INFO"
+
+
+def test_settings_rejects_missing_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in list(os.environ):
+        if key.isupper():
+            monkeypatch.delenv(key, raising=False)
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "your-telegram-bot-token"])
+def test_settings_rejects_sentinel_telegram_token(
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", bad)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "your-api-key"])
+def test_settings_rejects_sentinel_llm_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    monkeypatch.setenv("LLM_API_KEY", bad)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["http://10.0.0.5:11434", "http://192.168.1.9:11434", "http://172.16.0.1:11434"],
+)
+def test_settings_rejects_private_ip_ollama_url(
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", bad)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+@pytest.mark.parametrize(
+    "good",
+    ["http://ollama:11434", "http://localhost:11434", "http://127.0.0.1:11434"],
+)
+def test_settings_accepts_allowed_ollama_urls(monkeypatch: pytest.MonkeyPatch, good: str) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", good)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    s = Settings()
+    assert s.ollama_base_url == good

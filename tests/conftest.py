@@ -22,6 +22,17 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+def make_test_settings(**overrides: object) -> Settings:
+    """Build a Settings instance valid for tests (credentials + database)."""
+    base: dict[str, object] = {
+        "database_url": TEST_DATABASE_URL,
+        "telegram_bot_token": "test-token-123",
+        "llm_api_key": "sk-test-key",
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
 @pytest.fixture()
 def app() -> FastAPI:
     """Return a fresh application instance per test."""
@@ -37,8 +48,12 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 
 @pytest.fixture()
 def test_settings() -> Settings:
-    """Return settings pointed at the test database."""
-    return Settings(database_url=TEST_DATABASE_URL)
+    """Return settings pointed at the test database, with valid credentials."""
+    return Settings(
+        database_url=TEST_DATABASE_URL,
+        telegram_bot_token="test-token-123",
+        llm_api_key="sk-test-key",
+    )
 
 
 @pytest_asyncio.fixture()

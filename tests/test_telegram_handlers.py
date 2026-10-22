@@ -640,3 +640,139 @@ class TestHandlerSessionWiring:
             llm_svc=mock_llm_svc,
         )
         assert handler._session is None
+
+
+# ---------------------------------------------------------------------------
+# Handler failure paths (user-visible error strings)
+# ---------------------------------------------------------------------------
+
+
+class TestHandlerFailurePaths:
+    """Every user-facing failure branch must surface its exact message."""
+
+    @staticmethod
+    def _confirm(handler: TelegramUpdateHandler) -> None:
+        handler._conversation_manager.start_registration(12345)
+        handler._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler._conversation_manager.accept_age(12345, 25)
+        handler._conversation_manager.accept_weight(12345, 70.0)
+        handler._conversation_manager.accept_height(12345, 175.0)
+        handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+
+    @staticmethod
+    def _sent_text(mock_telegram_svc: AsyncMock) -> str:
+        call = mock_telegram_svc.send_message.call_args
+        if "text" in call.kwargs:
+            return call.kwargs["text"]
+        return call.args[1]
+
+    @pytest.mark.asyncio()
+    async def test_analysis_failure_sends_generic_error(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        self._confirm(handler)
+        mock_rag_svc.retrieve_async.side_effect = Exception("ollama down")
+
+        await handler.handle_update(_make_message_update(text="nasi 100g", update_id=20))
+
+        assert "Maaf, analisis gagal sementara" in self._sent_text(mock_telegram_svc)
+
+    @pytest.mark.asyncio()
+    async def test_confirm_failure_sends_save_error(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        from sqlalchemy.exc import SQLAlchemyError
+
+        mock_energy_svc.confirm_consumption.side_effect = SQLAlchemyError("db down")
+        pending_id = UUID(int=1)
+        update = _make_callback_update(data=f"confirm_ya:{pending_id}", update_id=21)
+
+        await handler.handle_update(update)
+
+        assert "Maaf, gagal menyimpan" in self._sent_text(mock_telegram_svc)
+
+    @pytest.mark.asyncio()
+    async def test_decline_failure_sends_process_error(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        from sqlalchemy.exc import SQLAlchemyError
+
+        mock_energy_svc.decline_consumption.side_effect = SQLAlchemyError("db down")
+        pending_id = UUID(int=1)
+        update = _make_callback_update(data=f"confirm_tidak:{pending_id}", update_id=22)
+
+        await handler.handle_update(update)
+
+        assert "Maaf, gagal memproses" in self._sent_text(mock_telegram_svc)
+
+    @pytest.mark.asyncio()
+    async def test_missing_profile_sends_profile_not_found(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_reg_svc: AsyncMock,
+    ) -> None:
+        self._confirm(handler)
+        mock_reg_svc.get_user.return_value = None
+
+        await handler.handle_update(_make_message_update(text="nasi 100g", update_id=23))
+
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "Profil tidak ditemukan" in text
+
+    @pytest.mark.asyncio()
+    async def test_missing_energy_sends_unavailable(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+    ) -> None:
+        self._confirm(handler)
+        # Retrieved food with no energi_per_100g → cannot record consumption
+        mock_rag_svc.retrieve_async.return_value = [
+            RetrievedFood(
+                record_id="doc-0",
+                name="Makanan misterius",
+                category="Lainnya",
+                gi_value=None,
+                energi_per_100g=None,
+                distance=0.01,
+                text_snippet="Makanan misterius",
+            )
+        ]
+
+        await handler.handle_update(
+            _make_message_update(text="makanan misterius 100g", update_id=24)
+        )
+
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "Energi pangan tidak tersedia" in text
+
+    @pytest.mark.asyncio()
+    async def test_stale_callback_sends_not_valid_anymore(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_energy_svc: AsyncMock,
+    ) -> None:
+        mock_energy_svc.confirm_consumption = AsyncMock(
+            return_value=(ConfirmationStatus.STALE, None, False)
+        )
+        pending_id = UUID(int=1)
+        update = _make_callback_update(data=f"confirm_ya:{pending_id}", update_id=25)
+
+        await handler.handle_update(update)
+
+        text = self._sent_text(mock_telegram_svc)
+        assert "Analisis sudah tidak berlaku" in text

@@ -20,6 +20,7 @@ suite (``tests/test_integration/test_retrieval_5queries.py``); these unit tests
 never touch the network or the production ``./chroma_db`` directory.
 """
 
+import asyncio
 from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock, patch
 
@@ -173,8 +174,10 @@ class TestRAGServiceConstruction:
     ) -> None:
         """``_make_embedder`` builds an ``OllamaEmbedder`` from settings."""
         settings = Settings(
-            ollama_base_url="http://ollama-test:11434",
+            ollama_base_url="http://ollama:11434",
             llm_api_key="test-key",
+            telegram_bot_token="test-token",
+            database_url="postgresql+asyncpg://u:p@h:5432/d",
             embedding_model_name="custom-model:7b",
             ollama_query_read_timeout_seconds=12.5,
         )
@@ -182,7 +185,7 @@ class TestRAGServiceConstruction:
             service = RAGService(settings=settings)
         embedder = service._embedder
         assert isinstance(embedder, OllamaEmbedder)
-        assert embedder._base_url == "http://ollama-test:11434"
+        assert embedder._base_url == "http://ollama:11434"
         assert embedder._model == "custom-model:7b"
         assert embedder._client.timeout.read == 12.5
 
@@ -202,8 +205,49 @@ class TestRAGServiceConstruction:
         assert result == expected
         retrieve.assert_called_once_with("nasi", 5, None)
 
+    @pytest.mark.asyncio()
+    async def test_retrieve_async_concurrent_calls_succeed(self, mock_settings: MagicMock) -> None:
+        """Multiple concurrent retrieve_async calls must not race on the
+        lazy collection init or embedder."""
+        expected = [make_food(1)]
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=MagicMock()),
+            patch.object(RAGService, "_make_client", return_value=MagicMock()),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+        with patch.object(service, "retrieve", return_value=expected):
+            results = await asyncio.gather(
+                service.retrieve_async("nasi", 5),
+                service.retrieve_async("nasi goreng", 5),
+                service.retrieve_async("nasi", 5),
+            )
+        assert results == [expected, expected, expected]
 
-# ---------------------------------------------------------------------------
+    @pytest.mark.asyncio()
+    async def test_retrieve_async_does_not_block_event_loop(self, mock_settings: MagicMock) -> None:
+        """Retrieve runs on a worker thread: a slow retrieve must not freeze
+        the event loop (healthcheck/responsiveness)."""
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=MagicMock()),
+            patch.object(RAGService, "_make_client", return_value=MagicMock()),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+
+        async def slow_retrieve(*args: object, **kwargs: object) -> list:
+            # Simulate a stalled Ollama/chroma call on the worker thread.
+            await asyncio.sleep(0.2)
+            return [make_food(1)]
+
+        with patch.object(service, "retrieve", side_effect=slow_retrieve):
+            started = asyncio.get_running_loop().time()
+            # While the slow retrieve is in flight, the loop must remain
+            # responsive — this coroutine should complete within ~50 ms.
+            tick = asyncio.create_task(asyncio.sleep(0.05))
+            await tick
+            elapsed = asyncio.get_running_loop().time() - started
+            assert elapsed < 0.15, f"event loop was blocked: {elapsed:.2f}s"
+
+
 # retrieve
 # ---------------------------------------------------------------------------
 

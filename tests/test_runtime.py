@@ -8,6 +8,7 @@ is deterministic and does not depend on the network.
 """
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -92,6 +93,7 @@ async def runtime(
         engine=async_engine,
         sessionmaker=sessionmaker,
         telegram_svc=svc,  # type: ignore[arg-type]
+        rag_svc=MagicMock(),  # type: ignore[arg-type]
         scheduler=sched,  # type: ignore[arg-type]
         handler_factory=factory,  # type: ignore[arg-type]
         poll_runner=None,
@@ -130,6 +132,7 @@ async def test_dispatch_rolls_back_when_handler_raises(
         engine=async_engine,
         sessionmaker=sessionmaker,
         telegram_svc=FakeTelegramSvc(),  # type: ignore[arg-type]
+        rag_svc=MagicMock(),  # type: ignore[arg-type]
         scheduler=FakeScheduler(),  # type: ignore[arg-type]
         handler_factory=lambda session: BoomHandler(session),  # type: ignore[arg-type,return-value]
         poll_runner=None,

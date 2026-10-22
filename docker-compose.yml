@@ -21,7 +21,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-diabetabot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diabetabot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env or environment}
       POSTGRES_DB: ${POSTGRES_DB:-diabetabot}
     volumes:
       - pg_data:/var/lib/postgresql/data

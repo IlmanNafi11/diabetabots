@@ -66,18 +66,16 @@ class OllamaEmbedder:
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, dict) or "embeddings" not in payload:
-            raise ValueError(
-                f"Ollama response missing 'embeddings' key: {payload!r:.200}"
-            )
+            raise ValueError(f"Ollama response missing 'embeddings' key: {payload!r:.200}")
         vectors = payload["embeddings"]
         if len(vectors) != len(texts):
-            raise ValueError(
-                f"Ollama returned {len(vectors)} embeddings for {len(texts)} inputs"
-            )
+            raise ValueError(f"Ollama returned {len(vectors)} embeddings for {len(texts)} inputs")
         return [list(map(float, vector)) for vector in vectors]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed documents as-is — no passage prefix."""
+        if not texts:
+            return []
         return self._embed(texts)
 
     def embed_query(self, text: str) -> list[float]:

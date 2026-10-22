@@ -106,6 +106,7 @@ class TelegramUpdateHandler:
         rag_svc: RAGService,
         llm_svc: LLMService,
         session: AsyncSession | None = None,
+        max_user_question_chars: int = 512,
     ) -> None:
         self._telegram_svc = telegram_svc
         self._conversation_manager = conversation_manager
@@ -114,6 +115,7 @@ class TelegramUpdateHandler:
         self._rag_svc = rag_svc
         self._llm_svc = llm_svc
         self._session = session
+        self._max_user_question_chars = max_user_question_chars
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -262,6 +264,13 @@ class TelegramUpdateHandler:
         if not text or not text.strip():
             await self._send(chat_id, "Ketik nama makanan, contoh: nasi goreng 150g")
             return
+        if len(text) > self._max_user_question_chars:
+            await self._send(
+                chat_id,
+                f"Pertanyaan terlalu panjang (maksimal "
+                f"{self._max_user_question_chars} karakter). Coba ketik lebih singkat.",
+            )
+            return
 
         food_query = text.strip()
 
@@ -390,8 +399,8 @@ class TelegramUpdateHandler:
                 text=analysis_text,
                 inline_keyboard=build_confirm_keyboard(pending.id),
             )
-        except Exception as exc:
-            log.exception("Analysis failed for chat %s: %s", chat_id, exc)
+        except Exception:
+            log.error("Analysis failed for chat %s", chat_id)
             await self._send(
                 chat_id,
                 "Maaf, analisis gagal sementara. Silakan coba lagi beberapa saat.",
@@ -407,8 +416,8 @@ class TelegramUpdateHandler:
         """Log a confirmed consumption, reducing the balance exactly once."""
         try:
             status, record, warned = await self._energy_svc.confirm_consumption(chat_id, pending_id)
-        except SQLAlchemyError as exc:
-            log.exception("Ya confirm failed: %s", exc)
+        except SQLAlchemyError:
+            log.error("Ya confirm failed for chat %s", chat_id)
             await self._telegram_svc.send_message(chat_id, "Maaf, gagal menyimpan. Coba lagi.")
             return
 
@@ -444,8 +453,8 @@ class TelegramUpdateHandler:
         """Decline a consumption: no balance change, no log row."""
         try:
             status = await self._energy_svc.decline_consumption(chat_id, pending_id)
-        except SQLAlchemyError as exc:
-            log.exception("Tidak confirm failed: %s", exc)
+        except SQLAlchemyError:
+            log.error("Tidak confirm failed for chat %s", chat_id)
             await self._telegram_svc.send_message(chat_id, "Maaf, gagal memproses. Coba lagi.")
             return
 

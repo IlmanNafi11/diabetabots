@@ -36,7 +36,9 @@ DATASET_PATH = Path("data/tkpi-gi-final.jsonl")
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
-    return Settings()
+    from tests.conftest import make_test_settings
+
+    return make_test_settings()
 
 
 @pytest.fixture(scope="session")
@@ -49,7 +51,9 @@ def _skip_without_llm_credentials(settings: Settings) -> None:
 @pytest.fixture(scope="session")
 def _skip_when_ollama_unreachable() -> None:
     """Skip when the configured Ollama endpoint does not answer ``/api/version``."""
-    settings = Settings()
+    from tests.conftest import make_test_settings
+
+    settings = make_test_settings()
     try:
         httpx.get(
             f"{settings.ollama_base_url.rstrip('/')}/api/version",

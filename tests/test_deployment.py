@@ -56,8 +56,6 @@ def test_compose_mode_a_contains_app_postgres_and_persistent_volumes() -> None:
 
 def test_external_postgres_override_removes_local_dependency_and_service() -> None:
     override = (ROOT / "docker-compose.external-postgres.yml").read_text()
-
-    assert "depends_on: !reset []" in override
     assert "postgres: !reset null" in override
     assert "external: true" in override
     assert "${EXTERNAL_NETWORK:?EXTERNAL_NETWORK must be set}" in override
@@ -77,10 +75,8 @@ def test_compose_mode_a_includes_ollama_server_and_init_with_volume() -> None:
 
 def test_external_ollama_override_resets_services_and_requires_base_url() -> None:
     override = (ROOT / "docker-compose.external-ollama.yml").read_text()
-
     assert "ollama: !reset null" in override
     assert "ollama-init: !reset null" in override
-    assert "condition: service_healthy" in override
     assert "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}" in override
 
 

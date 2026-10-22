@@ -86,9 +86,7 @@ def _snapshot_persist_dir(persist_dir: Path, backup_dir: Path, timestamp: str) -
         if not names:
             raise RuntimeError(f"snapshot archive is empty: {archive_path}")
         if not any(name.endswith("chroma.sqlite3") for name in names):
-            raise RuntimeError(
-                f"snapshot archive {archive_path} does not contain chroma.sqlite3"
-            )
+            raise RuntimeError(f"snapshot archive {archive_path} does not contain chroma.sqlite3")
     return archive_path
 
 
@@ -155,8 +153,16 @@ def migrate_collection(
     if swap:
         dropped: list[str] = []
         backup_name = f"{settings.collection_name}_pre_migration"
-        with contextlib.suppress(NotFoundError):
-            client.delete_collection(backup_name)
+        # Abort if a previous run left a backup at this name: the swap below
+        # is about to destroy it before any new staging exists, so the
+        # last-known-good collection would be lost. The operator must inspect
+        # (or delete) the stale backup explicitly first.
+        if backup_name in [c.name for c in client.list_collections()]:
+            raise RuntimeError(
+                f"backup collection {backup_name!r} already exists from a "
+                "previous run; resolve it (verify or delete it manually) before "
+                "re-running the migration"
+            )
 
         previous = None
         with contextlib.suppress(NotFoundError, KeyError):
@@ -175,7 +181,12 @@ def migrate_collection(
                     renamed = client.get_collection(backup_name)
                     renamed.modify(name=settings.collection_name)
                 except Exception:
-                    pass
+                    # Restore itself failed: the snapshot archive is now the
+                    # only recovery path, so surface it instead of hiding it.
+                    raise RuntimeError(
+                        f"failed to restore collection {backup_name!r} after a "
+                        f"failed swap; restore the snapshot archive manually"
+                    ) from None
             raise
 
         if after_drop is not None:
@@ -196,8 +207,6 @@ def migrate_collection(
         }
         raw_log.write(json.dumps(payload, ensure_ascii=False) + "\n")
     return count
-
-
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -291,9 +300,7 @@ def main(argv: list[str] | None = None) -> int:
         # Snapshot BEFORE creating the PersistentClient: the client can write
         # to the SQLite database on creation, and the snapshot must capture a
         # closed, consistent database.
-        archive_path = _snapshot_persist_dir(
-            persist_dir, args.backup_dir, timestamp
-        )
+        archive_path = _snapshot_persist_dir(persist_dir, args.backup_dir, timestamp)
         print(f"Snapshot written: {archive_path}")
 
     client = chromadb.PersistentClient(path=settings.chroma_persist_dir)

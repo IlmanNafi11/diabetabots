@@ -24,8 +24,6 @@
 services:
   app:
     depends_on:
-      postgres:
-        condition: service_healthy
       ollama-init: !reset null
     environment:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}

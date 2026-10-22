@@ -31,6 +31,7 @@ def _capturing_client(
 
     return httpx.Client(transport=httpx.MockTransport(handler), base_url=_BASE_URL)
 
+
 def _embedder(client: httpx.Client, **kwargs: Any) -> OllamaEmbedder:
     kwargs.setdefault("model", _MODEL)
     return OllamaEmbedder(base_url=_BASE_URL, client=client, **kwargs)
@@ -53,9 +54,7 @@ def test_embed_query_sends_prefixed_input_to_embed_endpoint() -> None:
     """Queries are prefixed with ``"query: "`` per the arctic embed2 config."""
     captured: dict[str, Any] = {}
     embedder = _embedder(
-        _capturing_client(
-            payload={"embeddings": [[0.1, 0.2, 0.3]]}, captured=captured
-        )
+        _capturing_client(payload={"embeddings": [[0.1, 0.2, 0.3]]}, captured=captured)
     )
 
     vector = embedder.embed_query("nasi putih")
@@ -69,9 +68,7 @@ def test_embed_documents_sends_texts_without_prefix() -> None:
     """Documents are embedded as-is — no passage prefix."""
     captured: dict[str, Any] = {}
     embedder = _embedder(
-        _capturing_client(
-            payload={"embeddings": [[0.1], [0.2]]}, captured=captured
-        )
+        _capturing_client(payload={"embeddings": [[0.1], [0.2]]}, captured=captured)
     )
 
     vectors = embedder.embed_documents(["nasi putih", "ayam goreng"])
@@ -114,6 +111,7 @@ def test_base_url_trailing_slash_is_normalized() -> None:
     embedder.embed_query("x")
 
     assert captured["url"] == f"{_BASE_URL}/api/embed"
+
 
 def test_embed_query_raises_on_http_error() -> None:
     embedder = _embedder(_capturing_client(status_code=500, payload={"error": "model not found"}))
@@ -182,3 +180,67 @@ def test_malformed_json_raises_value_error() -> None:
 
     with pytest.raises(ValueError):
         embedder.embed_query("x")
+
+
+def test_embed_documents_empty_list_returns_empty() -> None:
+    """Embedding an empty document list must not touch the network."""
+    called = False
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal called
+        called = True
+        raise AssertionError("network must not be called for empty input")
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url=_BASE_URL)
+    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL, client=client)
+    try:
+        assert embedder.embed_documents([]) == []
+        assert not called
+    finally:
+        embedder.close()
+        client.close()
+
+
+def test_close_owned_client_releases_pool() -> None:
+    """close() must shut down the internally owned client and be idempotent."""
+    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL)
+    embedder.close()
+    embedder.close()
+
+
+def test_embed_documents_empty_list_short_circuits() -> None:
+    """Empty list should return [] without a server round-trip."""
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"embeddings": []})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url=_BASE_URL)
+    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL, client=client)
+    try:
+        assert embedder.embed_documents([]) == []
+        assert captured == []
+    finally:
+        embedder.close()
+        client.close()
+
+
+def test_external_client_left_open_after_close() -> None:
+    """A client passed in stays usable after embedder.close() (not owned)."""
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(200, json={"embeddings": [[0.1] * 3072]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url=_BASE_URL)
+    embedder = OllamaEmbedder(base_url=_BASE_URL, model=_MODEL, client=client)
+    try:
+        embedder.embed_query("nasi putih")
+        assert len(captured) == 1
+    finally:
+        embedder.close()  # external client retained — close() is a no-op for it
+    # The external client remains usable after embedder.close().
+    assert client.get("/api/embed").status_code == 200
+    client.close()

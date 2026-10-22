@@ -7,10 +7,10 @@
 #   docker compose -f docker-compose.yml \
 #                  -f docker-compose.external-postgres.yml up -d
 #
-# This override:
-#   - drops the bundled `postgres` service (`!reset`);
-#   - removes the app's dependency on it (`depends_on: !reset []`);
-#   - attaches the app to an existing external Docker network so it can reach
+#   - removes only the app's dependency on the bundled postgres service
+#     (`postgres: !reset null` under depends_on), keeping any other dependency
+#     (e.g. ollama-init from docker-compose.external-ollama.yml) intact;
+#     and attaches the app to the external Docker network so it can reach
 #     the external database by name.
 #
 # No application code changes are required — only environment/override files.
@@ -18,7 +18,8 @@
 
 services:
   app:
-    depends_on: !reset []
+    depends_on:
+      postgres: !reset null
     networks:
       - default
       - external_db

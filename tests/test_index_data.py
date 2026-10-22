@@ -50,7 +50,9 @@ class FakeCollection:
 
 @pytest.fixture()
 def settings() -> Settings:
-    return Settings(
+    from tests.conftest import make_test_settings
+
+    return make_test_settings(
         collection_name="tkpi_gi",
         chunking_strategy="recursive",
         chroma_persist_dir="./tmp-chroma-test",

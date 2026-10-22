@@ -128,10 +128,6 @@ class TestMessageUpdateHelpers:
         m = MessageUpdate(chat_id=1, user_id=1, text="/analisis nasi", message_id=1, date=0)
         assert m.is_command("/analisis")
 
-    def test_is_command_with_prefix(self) -> None:
-        m = MessageUpdate(chat_id=1, user_id=1, text="/analisis nasi", message_id=1, date=0)
-        assert m.is_command_with("/analisis")
-
 
 # ---------------------------------------------------------------------------
 # TelegramService getUpdates via mock httpx Client
@@ -249,29 +245,6 @@ class TestTelegramServiceGetUpdates:
 # ---------------------------------------------------------------------------
 # Deduplication / offset tracking
 # ---------------------------------------------------------------------------
-
-
-class TestOffsetTracking:
-    @pytest.mark.asyncio()
-    async def test_get_next_offset_returns_max_plus_one(self, mock_settings: MagicMock) -> None:
-        from app.services.telegram_service import TelegramService
-
-        svc = TelegramService(settings=mock_settings)
-        updates = [
-            TelegramUpdate(update_id=3, update_type=TelegramUpdateType.OTHER),
-            TelegramUpdate(update_id=1, update_type=TelegramUpdateType.OTHER),
-            TelegramUpdate(update_id=5, update_type=TelegramUpdateType.OTHER),
-        ]
-        offset = svc._get_next_offset(updates)
-        assert offset == 6
-
-    @pytest.mark.asyncio()
-    async def test_get_next_offset_empty_returns_none(self, mock_settings: MagicMock) -> None:
-        from app.services.telegram_service import TelegramService
-
-        svc = TelegramService(settings=mock_settings)
-        offset = svc._get_next_offset([])
-        assert offset is None
 
 
 # ---------------------------------------------------------------------------

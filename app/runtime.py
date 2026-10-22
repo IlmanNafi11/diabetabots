@@ -55,6 +55,7 @@ class AppRuntime:
         engine: AsyncEngine,
         sessionmaker: async_sessionmaker[AsyncSession],
         telegram_svc: TelegramService,
+        rag_svc: RAGService,
         scheduler: Any,
         handler_factory: HandlerFactory,
         poll_runner: PollRunner | None = None,
@@ -62,6 +63,7 @@ class AppRuntime:
         self._engine = engine
         self._sessionmaker = sessionmaker
         self._telegram_svc = telegram_svc
+        self._rag_svc = rag_svc
         self._scheduler = scheduler
         self._handler_factory = handler_factory
         self._poll_runner: PollRunner | None = poll_runner
@@ -87,7 +89,7 @@ class AppRuntime:
         log.info("Telegram polling task started")
 
     async def stop(self) -> None:
-        """Stop polling, shut the scheduler down, and dispose the engine."""
+        """Stop polling, shut the scheduler down, dispose the engine and RAG."""
         if self._stopped:
             return
         self._stopped = True
@@ -101,6 +103,10 @@ class AppRuntime:
 
         self._scheduler.shutdown(wait=False)
         await self._engine.dispose()
+        try:
+            self._rag_svc.close()
+        except Exception:
+            log.exception("Failed to close RAG service")
         log.info("AppRuntime stopped")
 
     # ------------------------------------------------------------------
@@ -116,7 +122,7 @@ class AppRuntime:
                 await session.commit()
             except Exception:
                 await session.rollback()
-                log.exception("Failed to handle update %s", update.update_id)
+                log.error("Failed to handle update %s", update.update_id)
                 raise
 
     # ------------------------------------------------------------------
@@ -168,12 +174,14 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
             rag_svc=rag_svc,
             llm_svc=llm_svc,
             session=session,
+            max_user_question_chars=settings.max_user_question_chars,
         )
 
     return AppRuntime(
         engine=engine,
         sessionmaker=sessionmaker,
         telegram_svc=telegram_svc,
+        rag_svc=rag_svc,
         scheduler=scheduler,
         handler_factory=handler_factory,
     )

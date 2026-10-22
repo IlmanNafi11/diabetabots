@@ -9,7 +9,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.models import ConsumptionLog, DailyEnergy, PendingAnalyses, User
@@ -211,12 +211,14 @@ class EnergyService:
         gl_aktual: float | None = None,
         analysis_message_id: int | None = None,
         now: datetime | None = None,
+        commit: bool = True,
     ) -> tuple[DailyEnergy, ConsumptionLog]:
         """Record a confirmed consumption ("Ya") and decrement the balance once.
 
         Writes a :class:`ConsumptionLog` row and applies the single balance
-        reduction in one commit, so a confirmed consumption is never logged
-        without its energy being subtracted (SPEC energy-tracking task-13).
+        reduction; by default commits in one call. Pass ``commit=False`` when
+        the caller bundles the write together with the pending claim so both
+        land in a single transaction.
         Callers gate this behind ``pending_analyses.resolved`` so a double tap
         cannot record twice.
         """
@@ -233,7 +235,8 @@ class EnergyService:
             analysis_message_id=analysis_message_id,
         )
         self._session.add(log)
-        await self._session.commit()
+        if commit:
+            await self._session.commit()
         return record, log
 
     # ------------------------------------------------------------------
@@ -291,16 +294,21 @@ class EnergyService:
         """Resolve a "Ya" tap: log the consumption and reduce the balance once.
 
         Returns ``(status, record, warned)``. ``record`` is ``None`` unless the
-        status is ``CONFIRMED``. Idempotent via ``pending_analyses.resolved``;
-        cross-day callbacks return ``STALE`` without touching the balance.
+        status is ``CONFIRMED``. Cross-day callbacks return ``STALE`` without
+        touching the balance.
+
+        Race safety: the pending row is claimed with a conditional
+        ``UPDATE ... WHERE resolved = false`` (compare-and-swap) *before* the
+        balance is reduced, so two taps racing through the same await points
+        can never both pass the resolved check and double-reduce.
         """
         pending = await self.get_pending(telegram_id, pending_id)
         if pending is None:
             return ConfirmationStatus.NOT_FOUND, None, False
-        if pending.resolved:
-            return ConfirmationStatus.ALREADY_RESOLVED, None, False
         if pending.tanggal_wib != wib_today(now):
             return ConfirmationStatus.STALE, None, False
+        if not await self._claim_pending(telegram_id, pending_id):
+            return ConfirmationStatus.ALREADY_RESOLVED, None, False
 
         record, _log = await self.record_consumption(
             telegram_id,
@@ -309,8 +317,8 @@ class EnergyService:
             energi_kkal=pending.energi_kkal,
             gl_aktual=pending.gl_aktual,
             now=now,
+            commit=False,
         )
-        pending.resolved = True
         await self._session.commit()
         return ConfirmationStatus.CONFIRMED, record, record.sisa_energi_kkal < 0
 
@@ -325,11 +333,27 @@ class EnergyService:
         pending = await self.get_pending(telegram_id, pending_id)
         if pending is None:
             return ConfirmationStatus.NOT_FOUND
-        if pending.resolved:
-            return ConfirmationStatus.ALREADY_RESOLVED
         if pending.tanggal_wib != wib_today(now):
             return ConfirmationStatus.STALE
-
-        pending.resolved = True
+        if not await self._claim_pending(telegram_id, pending_id):
+            return ConfirmationStatus.ALREADY_RESOLVED
         await self._session.commit()
         return ConfirmationStatus.DECLINED
+
+    async def _claim_pending(self, telegram_id: int, pending_id: UUID) -> bool:
+        """Atomically claim a pending row if it is still unresolved.
+
+        Runs a conditional ``UPDATE ... SET resolved = true WHERE resolved =
+        false`` inside the current transaction; only the first caller gets
+        ``rowcount == 1``, every racing caller sees zero rows updated.
+        """
+        result = await self._session.execute(
+            update(PendingAnalyses)
+            .where(
+                PendingAnalyses.id == pending_id,
+                PendingAnalyses.telegram_id == telegram_id,
+                PendingAnalyses.resolved.is_(False),
+            )
+            .values(resolved=True)
+        )
+        return result.rowcount == 1
