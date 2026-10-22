@@ -55,7 +55,10 @@ def index_dataset(
 
 
 def _create_embedder(settings: Settings) -> EmbeddingClient:
-    return OllamaEmbedder(base_url=settings.ollama_base_url)
+    return OllamaEmbedder(
+        base_url=settings.ollama_base_url,
+        read_timeout_seconds=settings.ollama_read_timeout_seconds,
+    )
 
 
 def _write_log(path: Path, payload: dict[str, Any]) -> None:

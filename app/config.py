@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     llm_api_key: str = "your-api-key"
     chat_model_name: str = "your-chat-model"
     ollama_base_url: str = "http://ollama:11434"
+    # Embedding inference is CPU-bound; a full 100-document batch can take
+    # minutes on slower hosts, so the read timeout must exceed that.
+    ollama_read_timeout_seconds: float = Field(default=600.0, gt=0)
     embedding_model_name: str = "snowflake-arctic-embed2"
     embedding_dim: int = Field(default=1024, gt=0)
     rag_top_k: int = Field(default=5, gt=0)

@@ -188,7 +188,10 @@ class RAGService:
         return self._embedder
 
     def _make_embedder(self) -> OllamaEmbedder:
-        return OllamaEmbedder(base_url=self._settings.ollama_base_url)
+        return OllamaEmbedder(
+            base_url=self._settings.ollama_base_url,
+            read_timeout_seconds=self._settings.ollama_read_timeout_seconds,
+        )
 
     def _get_collection(self) -> chromadb.Collection:
         if self._collection is None:

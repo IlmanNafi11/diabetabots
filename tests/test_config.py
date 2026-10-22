@@ -110,6 +110,7 @@ def test_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.ollama_base_url == "http://ollama:11434"
     assert s.embedding_model_name == "snowflake-arctic-embed2"
     assert s.embedding_dim == 1024
+    assert s.ollama_read_timeout_seconds == 600.0
     assert s.rag_top_k == 5
     assert s.rag_candidate_k == 20
     assert s.llm_temperature == 0.0

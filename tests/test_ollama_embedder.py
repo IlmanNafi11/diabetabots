@@ -63,6 +63,20 @@ def test_embed_documents_sends_texts_without_prefix(
     assert captured["json"] == {"model": _MODEL, "input": ["nasi putih", "ayam goreng"]}
 
 
+def test_custom_read_timeout_is_applied(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_post, captured = _fake_post_response([[0.1]])
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    embedder = OllamaEmbedder(
+        base_url=_BASE_URL,
+        model=_MODEL,
+        read_timeout_seconds=600.0,
+    )
+    embedder.embed_query("nasi putih")
+
+    assert captured["timeout"].read == 600.0
+
+
 def test_base_url_trailing_slash_is_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_post, captured = _fake_post_response([[0.1]])
     monkeypatch.setattr(httpx, "post", fake_post)

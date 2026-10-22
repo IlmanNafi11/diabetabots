@@ -33,16 +33,25 @@ class OllamaEmbedder:
     """LangChain-compatible embedder calling Ollama's ``/api/embed`` endpoint."""
 
     def __init__(
-        self, base_url: str, model: str = "snowflake-arctic-embed2:latest"
+        self,
+        base_url: str,
+        model: str = "snowflake-arctic-embed2:latest",
+        read_timeout_seconds: float = 600.0,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
+        self._read_timeout_seconds = read_timeout_seconds
 
     def _embed(self, texts: list[str]) -> list[list[float]]:
         response = httpx.post(
             f"{self._base_url}/api/embed",
             json={"model": self._model, "input": list(texts)},
-            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0),
+            timeout=httpx.Timeout(
+                connect=10.0,
+                read=self._read_timeout_seconds,
+                write=30.0,
+                pool=10.0,
+            ),
         )
         response.raise_for_status()
         return [list(map(float, vector)) for vector in response.json()["embeddings"]]
