@@ -6,8 +6,10 @@
 
 Parse the provided TKPI+GI dataset (`data/tkpi-gi-final.jsonl`, 1.146 entries —
 provided, never modified) into one embedding document per food entry and index
-them into the persistent ChromaDB collection `tkpi_gi` using the binding
-Iterasi 0 spike configuration (recursive chunking × text-embedding-3-large).
+them into the persistent ChromaDB collection `tkpi_gi` using the recursive
+chunking configuration from `.env` and the self-hosted embedding model
+`snowflake-arctic-embed2` served via `OLLAMA_BASE_URL` (arctic migration,
+2026-10-22).
 
 ## Public API
 
@@ -34,11 +36,12 @@ Iterasi 0 spike configuration (recursive chunking × text-embedding-3-large).
     writes `reports/logs/indexing-raw.log`, exits 1 when count ≠ 1.146
 
 ## Dependencies
-
 - Dataset `data/tkpi-gi-final.jsonl` (provided; read-only)
 - `chromadb` (persistent client at `Settings.chroma_persist_dir`, collection
-  created with `metadata={"hnsw:space": "cosine"}`), `langchain_openai.OpenAIEmbeddings`
-- Real provider credentials via env — indexing never fabricates embeddings
+  created with `metadata={"hnsw:space": "cosine"}`),
+  `app.services.ollama_embedder.OllamaEmbedder`
+- Self-hosted Ollama endpoint via `OLLAMA_BASE_URL` — indexing never fabricates
+  embeddings
 
 ## Data Flow
 
@@ -46,7 +49,7 @@ Iterasi 0 spike configuration (recursive chunking × text-embedding-3-large).
 data/tkpi-gi-final.jsonl
     → load_records → FoodRecord (1 per line)
     → build_documents(strategy=CHUNKING_STRATEGY from .env) → IndexDocument
-    → OpenAIEmbeddings(embed_documents, batches of 100, retry w/ backoff)
+    → OllamaEmbedder(embed_documents, batches of 100, retry w/ backoff)
     → ChromaDB PersistentClient → collection `tkpi_gi` (cosine space)
     → reports/logs/indexing-raw.log (document_count evidence)
 ```
@@ -66,7 +69,8 @@ data/tkpi-gi-final.jsonl
 - [x] 1.146 entries indexed into the `tkpi_gi` collection
 - [x] Raw unedited log at `reports/logs/indexing-raw.log`
 - [x] One document per food entry (never split across documents)
-- [x] Binding spike config (recursive × text-embedding-3-large) read from `.env`
+- [x] Binding embedding config (recursive × `snowflake-arctic-embed2`, 1024
+      dimensions) read from `.env` (`EMBEDDING_MODEL_NAME`, `OLLAMA_BASE_URL`)
 - [x] Unit tests for parser, embedder, and index script pass
       (`tests/test_parser.py`, `tests/test_embedder.py`, `tests/test_index_data.py`)
 - [x] Integration retrieval evidence (task-08):
@@ -77,7 +81,7 @@ data/tkpi-gi-final.jsonl
 
 **Always:** keep raw logs unedited; re-derive reports from logs only; verify
 count = 1.146 after any re-index.
-**Ask first:** changing the chunking strategy or embedding model after Iterasi 0
-(SPEC.md §7.2); adding new data sources.
+**Ask first:** changing the chunking strategy or embedding model after the
+arctic migration (SPEC.md §7.2); adding new data sources.
 **Never:** index food data outside TKPI+GI (SPEC.md §7.3); modify files under
 `data/`; commit the ChromaDB persistence directory.

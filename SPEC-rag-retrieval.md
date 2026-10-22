@@ -6,10 +6,10 @@
 ## Objective
 
 Retrieve the most nutritionally relevant TKPI+GI food entries for a user query
-using the binding spike configuration (recursive chunking ×
-text-embedding-3-large, cosine space, top-k = 5), and prove retrieval quality
-with Precision@5 on the five PRD §7.3 queries ≥ the Iterasi 0 spike threshold
-(0.800).
+using the recursive chunking configuration, self-hosted `snowflake-arctic-embed2`
+embeddings (1024 dimensions via `OLLAMA_BASE_URL`), cosine space, top-k = 5,
+and prove retrieval quality with Precision@5 on the five PRD §7.3 queries ≥
+the binding threshold (0.800).
 
 ## Public API
 
@@ -25,9 +25,11 @@ with Precision@5 on the five PRD §7.3 queries ≥ the Iterasi 0 spike threshold
 
 ## Dependencies
 
-- `data-indexing` module (collection `tkpi_gi`, cosine space, spike config)
-- `chromadb`, `langchain_openai.OpenAIEmbeddings` (same client configuration as
-  `app/scripts/index_data.py`)
+- `data-indexing` module (collection `tkpi_gi`, cosine space, arctic embedding
+  config)
+- `chromadb`, `app.services.ollama_embedder.OllamaEmbedder` (same client
+  configuration as `app/scripts/index_data.py`); Ollama endpoint via
+  `OLLAMA_BASE_URL`
 - Threshold source: binding Iterasi 0 spike result
   (`reports/laporan-spike-2026-10-10.md`, mean P@5 = 0.800); also stored as
   `SPIKE_PRECISION_AT_5` in `.env` for auditability
@@ -36,7 +38,7 @@ with Precision@5 on the five PRD §7.3 queries ≥ the Iterasi 0 spike threshold
 
 ```
 user query (or §7.3 query case)
-    → embed_query (text-embedding-3-large, 3072 d)
+    → embed_query (`snowflake-arctic-embed2`, 1024 d, "query: " prefix)
     → ChromaDB collection.query(n_results = RAG_TOP_K, cosine)
     → top-k IndexDocument metadata (name, category, strategy) + distances
     → precision_at_k per query → mean P@5
@@ -53,8 +55,8 @@ user query (or §7.3 query case)
 - Spike threshold regression (mean P@5 < 0.800) → integration test fails and
   blocks; investigate before proceeding (per plan risk: consider query
   expansion or hybrid BM25 fallback — Ask First before implementing)
-- No real credentials in env → integration test skips (unit tests still cover
-  the harness math)
+- No Ollama server reachable at `OLLAMA_BASE_URL` → integration tests skip
+  (unit tests still cover the harness math)
 
 ## Acceptance Criteria
 
