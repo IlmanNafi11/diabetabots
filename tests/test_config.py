@@ -207,3 +207,76 @@ def test_settings_accepts_allowed_ollama_urls(monkeypatch: pytest.MonkeyPatch, g
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
     s = Settings()
     assert s.ollama_base_url == good
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "http://ollama:11434@evil.example.com",  # userinfo bypass (hostname is evil)
+        "http://user:pass@localhost:11434",  # credentials on loopback
+        "https://ollama@evil.example.com:11434",
+    ],
+)
+def test_settings_rejects_ollama_url_with_userinfo(
+    monkeypatch: pytest.MonkeyPatch,
+    bad: str,
+) -> None:
+    monkeypatch.setenv("OLLAMA_BASE_URL", bad)
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError, match="ollama_base_url"):
+        Settings()
+
+
+def test_settings_rejects_llm_base_url_with_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "https://user:pass@llm.example.com/v1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError, match="llm_base_url"):
+        Settings()
+
+
+def test_settings_rejects_llm_base_url_with_private_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "http://10.0.0.5/v1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError, match="llm_base_url"):
+        Settings()
+
+
+def test_settings_rejects_llm_base_url_with_non_http_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "ftp://llm.example.com/v1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    with pytest.raises(ValidationError, match="llm_base_url"):
+        Settings()
+
+
+def test_settings_accepts_public_llm_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com/v1")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+    s = Settings()
+    assert s.llm_base_url == "https://llm.example.com/v1"
+
+def test_settings_rejects_non_positive_max_user_question_chars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prompt cap must stay positive (protects against prompt-stuffing)."""
+    for bad in ("0", "-1"):
+        monkeypatch.setenv("MAX_USER_QUESTION_CHARS", bad)
+        with pytest.raises(ValueError, match="greater than 0"):
+            Settings()

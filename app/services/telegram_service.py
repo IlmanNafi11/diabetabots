@@ -151,6 +151,13 @@ class TelegramService:
         Maximum retry attempts per HTTP error before re-raising.
     """
 
+    def __repr__(self) -> str:
+        """Never leak the bot token when the service is logged or repr'd."""
+        return (
+            f"TelegramService(token={'<redacted>'}, "
+            f"running={self._running}, offset={self._offset})"
+        )
+
     def __init__(
         self,
         settings: Settings | None = None,
@@ -181,26 +188,31 @@ class TelegramService:
     ) -> None:
         """Run the long-poll loop, calling ``on_update`` for each new update.
 
-        Runs synchronously in a loop. Call from an async context with
-        ``asyncio.to_thread(self.start_polling, on_update)`` or start it
-        in a background thread.
+        Runs synchronously in a worker thread. A single event loop lives for
+        the whole polling lifetime (created once, not per update) so update
+        handling and getUpdates share one loop instead of churning a new one
+        per message.
         """
         self._running = True
         log.info("Telegram polling started (offset=%s)", self._offset)
-
-        while self._running:
-            try:
-                updates = self._poll_loop(timeout=timeout)
-                for update in updates:
-                    self._offset = update.update_id + 1
-                    try:
-                        # on_update must be an awaitable callable
-                        asyncio.run(on_update(update))
-                    except Exception:
-                        log.error("on_update handler failed")
-            except Exception:
-                log.error("Polling loop failed; retrying")
-                continue
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            while self._running:
+                try:
+                    updates = loop.run_until_complete(self._poll_loop(timeout=timeout))
+                    for update in updates:
+                        self._offset = update.update_id + 1
+                        try:
+                            loop.run_until_complete(on_update(update))
+                        except Exception:
+                            log.error("on_update handler failed")
+                except Exception:
+                    log.error("Polling loop failed; retrying")
+                    continue
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
 
         log.info("Telegram polling stopped.")
 
@@ -209,10 +221,12 @@ class TelegramService:
         self._running = False
         log.info("Telegram polling stop requested.")
 
-    def _poll_loop(self, timeout: int) -> list[TelegramUpdate]:
+    async def _poll_loop(self, timeout: int) -> list[TelegramUpdate]:
         """Single poll iteration with retry."""
         try:
-            return asyncio.run(self._fetch_updates_with_retry(timeout=timeout, offset=self._offset))
+            return await self._fetch_updates_with_retry(
+                timeout=timeout, offset=self._offset
+            )
         except Exception:
             log.error("Poll failed after retries")
             return []

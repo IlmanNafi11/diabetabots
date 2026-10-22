@@ -9,6 +9,32 @@ markers = [
     "integration: cross-boundary tests that touch a real database, embeddings, or external service",
 ]
 
+[project]
+name = "diabetabots"
+version = "0.1.0"
+description = "DiabetaBot — Telegram calorie & GI analysis bot"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.143.0",
+    "uvicorn[standard]==0.54.0",
+    "httpx==0.28.1",
+    "SQLAlchemy[asyncio]==2.1.4",
+    "asyncpg==0.32.0",
+    "chromadb==1.5.9",
+    "langchain==1.4.4",
+    "langchain-openai==1.7.0",
+    "pydantic-settings==2.15.0",
+    "APScheduler==3.11.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pytest-cov==7.1.0",
+    "ruff==0.17.0",
+]
+
 [tool.coverage.run]
 source = ["app"]
 branch = true

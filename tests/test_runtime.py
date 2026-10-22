@@ -203,3 +203,57 @@ async def test_stop_before_start_is_a_noop(runtime: AppRuntime) -> None:
     await runtime.stop()
 
     assert runtime.is_polling is False
+
+
+async def test_stop_continues_cleanup_when_rag_close_fails(
+    async_engine: AsyncEngine,
+    sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """A failing RAG close must not mask the rest of the shutdown path."""
+    class BoomRag:
+        def close(self) -> None:
+            raise RuntimeError("boom")
+
+    rt = AppRuntime(
+        engine=async_engine,
+        sessionmaker=sessionmaker,
+        telegram_svc=FakeTelegramSvc(),  # type: ignore[arg-type]
+        rag_svc=BoomRag(),  # type: ignore[arg-type]
+        scheduler=FakeScheduler(),  # type: ignore[arg-type]
+        handler_factory=lambda session: RecordingHandler(session),  # type: ignore[arg-type,return-value]
+        poll_runner=None,
+    )
+
+    # No exception escapes stop(); the scheduler is still shut down.
+    await rt.stop()
+
+    assert rt._telegram_svc.stopped is True
+    assert rt._scheduler.shutdown_called is True
+
+
+async def test_dispatch_does_not_leak_exception_details_to_log(
+    async_engine: AsyncEngine,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class BoomHandler:
+        def __init__(self, session: AsyncSession) -> None:
+            self.session = session
+
+        async def handle_update(self, update: TelegramUpdate) -> None:
+            raise RuntimeError("secret-internal-detail")
+
+    rt = AppRuntime(
+        engine=async_engine,
+        sessionmaker=sessionmaker,
+        telegram_svc=FakeTelegramSvc(),  # type: ignore[arg-type]
+        rag_svc=MagicMock(),  # type: ignore[arg-type]
+        scheduler=FakeScheduler(),  # type: ignore[arg-type]
+        handler_factory=lambda session: BoomHandler(session),  # type: ignore[arg-type,return-value]
+        poll_runner=None,
+    )
+
+    with pytest.raises(RuntimeError):
+        await rt._dispatch(_make_update())
+
+    assert "secret-internal-detail" not in caplog.text

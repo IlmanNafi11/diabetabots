@@ -12,12 +12,14 @@ must be safe under retries and double taps.
 
 ## Public API
 
-- `app/services/telegram_service.py`
   - `TelegramUpdate.from_dict(raw)` — parses `message` and `callback_query`
     updates, extracting `chat_id`, `user_id`, `text`, `callback_data`,
     `callback_query_id`, and `message_id`.
-  - `TelegramService.start_polling` / `poll_once` — long-polling loop with
-    retry/backoff and update-id offset tracking.
+  - `TelegramService.start_polling` — runs the long-polling loop on a single
+    worker-thread event loop for its whole lifetime; per-update handlers are
+    awaited on that same loop. Retry/backoff and update-id offset tracking
+    included.
+  - `TelegramService.__repr__` — redacted; never leaks the bot token.
   - `send_message`, `send_message_with_inline_buttons`, and
     `edit_message_reply_markup` — outbound text, keyboard, and keyboard-clear
     calls.
@@ -66,6 +68,12 @@ AWAIT_HEIGHT → AWAIT_ACTIVITY → CONFIRMED`; non-gram portions route through
   balance/log state (single commit per confirmation).
 - Polling/HTTP errors → retry with backoff; a failed update never aborts the
   loop.
+- A chat exceeding the per-chat rate limit (default 10 analysis/min) receives
+  a Bahasa Indonesia slow-down reply; no analysis or DB work is started.
+- Over-long questions (above `MAX_USER_QUESTION_CHARS`, default 512) are
+  rejected with a short refusal; the LLM is never called.
+- Logs and reprs never contain the bot token (`TelegramService.__repr__` is
+  redacted).
 
 ## Acceptance Criteria
 

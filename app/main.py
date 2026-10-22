@@ -11,11 +11,12 @@ a fake. Production uses :func:`create_production_app` as a uvicorn factory
 (see ``SPEC-deployment.md``).
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.routers.health import router as health_router
 
@@ -23,7 +24,12 @@ if TYPE_CHECKING:
     from app.runtime import AppRuntime
 
 
-def create_app(*, runtime: "AppRuntime | None" = None) -> FastAPI:
+def create_app(
+    *,
+    runtime: "AppRuntime | None" = None,
+    production: bool = False,
+    allowed_hosts: Sequence[str] | None = None,
+) -> FastAPI:
     """Build and configure the FastAPI application.
 
     Parameters
@@ -31,6 +37,12 @@ def create_app(*, runtime: "AppRuntime | None" = None) -> FastAPI:
     runtime:
         Optional process runtime. When given, its ``start``/``stop`` bracket
         the application lifespan; when ``None`` the app only serves HTTP.
+    production:
+        Disable interactive docs and enforce the ``allowed_hosts`` middleware.
+    allowed_hosts:
+        Hosts permitted to reach the app; required (non-empty) when
+        ``production`` is set. The loopback ``testserver`` alias is always
+        allowed so TestClient works.
     """
 
     @asynccontextmanager
@@ -48,7 +60,14 @@ def create_app(*, runtime: "AppRuntime | None" = None) -> FastAPI:
         description="Telegram chatbot for personal nutrition and glycemic feasibility analysis.",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url=None if production else "/docs",
+        openapi_url=None if production else "/openapi.json",
     )
+    if production:
+        hosts = list(allowed_hosts or [])
+        if "testserver" not in hosts:
+            hosts.append("testserver")
+        application.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
     application.include_router(health_router)
     return application
 
@@ -57,7 +76,8 @@ def create_production_app() -> FastAPI:
     """uvicorn factory: build the app wired to the real services."""
     from app.runtime import build_runtime
 
-    return create_app(runtime=build_runtime())
+    return create_app(runtime=build_runtime(), production=True)
 
 
 app = create_app()
+

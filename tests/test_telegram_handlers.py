@@ -187,6 +187,25 @@ def handler(
     )
 
 
+@pytest.fixture()
+def handler_with_cap(
+    mock_telegram_svc: AsyncMock,
+    mock_reg_svc: AsyncMock,
+    mock_energy_svc: AsyncMock,
+    mock_rag_svc: MagicMock,
+    mock_llm_svc: AsyncMock,
+) -> TelegramUpdateHandler:
+    return TelegramUpdateHandler(
+        telegram_svc=mock_telegram_svc,
+        conversation_manager=ConversationManager(),
+        registration_svc=mock_reg_svc,
+        energy_svc=mock_energy_svc,
+        rag_svc=mock_rag_svc,
+        llm_svc=mock_llm_svc,
+        max_user_question_chars=20,
+    )
+
+
 # ---------------------------------------------------------------------------
 # /start — registration entry
 # ---------------------------------------------------------------------------
@@ -490,6 +509,120 @@ class TestFoodQuery:
         assert "Tidak ditemukan" in text
         mock_llm_svc.analyze_food.assert_not_awaited()
         mock_telegram_svc.send_message_with_inline_buttons.assert_not_awaited()
+
+    @pytest.mark.asyncio()
+    async def test_overlong_question_rejected_without_analysis(
+        self,
+        handler_with_cap: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_llm_svc: AsyncMock,
+    ) -> None:
+        handler_with_cap._conversation_manager.start_registration(12345)
+        handler_with_cap._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler_with_cap._conversation_manager.accept_age(12345, 25)
+        handler_with_cap._conversation_manager.accept_weight(12345, 70.0)
+        handler_with_cap._conversation_manager.accept_height(12345, 175.0)
+        handler_with_cap._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+
+        await handler_with_cap.handle_update(
+            _make_message_update(text="a" * 21, update_id=10)
+        )
+
+        mock_rag_svc.retrieve_async.assert_not_awaited()
+        mock_llm_svc.analyze_food.assert_not_awaited()
+        mock_telegram_svc.send_message_with_inline_buttons.assert_not_awaited()
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "terlalu panjang" in text
+
+    @pytest.mark.asyncio()
+    async def test_boundary_length_question_still_analyzed(
+        self,
+        handler_with_cap: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_llm_svc: AsyncMock,
+        mock_energy_svc: AsyncMock,
+        mock_reg_svc: AsyncMock,
+    ) -> None:
+        handler_with_cap._conversation_manager.start_registration(12345)
+        handler_with_cap._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler_with_cap._conversation_manager.accept_age(12345, 25)
+        handler_with_cap._conversation_manager.accept_weight(12345, 70.0)
+        handler_with_cap._conversation_manager.accept_height(12345, 175.0)
+        handler_with_cap._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+        mock_energy_record = MagicMock()
+        mock_energy_record.sisa_energi_kkal = 2000.0
+        mock_energy_svc.ensure_today = AsyncMock(return_value=mock_energy_record)
+
+        await handler_with_cap.handle_update(
+            _make_message_update(text="nasi goreng 150 gram", update_id=11)
+        )
+
+        mock_rag_svc.retrieve_async.assert_awaited()
+        mock_llm_svc.analyze_food.assert_awaited()
+
+    @pytest.mark.asyncio()
+    async def test_hapus_data_clears_profile_and_state(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_reg_svc: AsyncMock,
+    ) -> None:
+        handler._conversation_manager.start_registration(12345)
+        mock_reg_svc.delete_user_data = AsyncMock(return_value=True)
+
+        await handler.handle_update(_make_message_update(text="/hapus_data", update_id=12))
+
+        mock_reg_svc.delete_user_data.assert_awaited_once_with(12345)
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "dihapus" in text.lower()
+        conv = handler._conversation_manager.get(12345)
+        assert conv.state is ConversationState.IDLE
+
+    @pytest.mark.asyncio()
+    async def test_hapus_data_unregistered_sends_guidance(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_reg_svc: AsyncMock,
+    ) -> None:
+        mock_reg_svc.delete_user_data = AsyncMock(return_value=False)
+
+        await handler.handle_update(_make_message_update(text="/hapus_data", update_id=13))
+
+        text = mock_telegram_svc.send_message.call_args.kwargs["text"]
+        assert "tidak menemukan" in text.lower()
+
+    @pytest.mark.asyncio()
+    async def test_rate_limited_chat_gets_slowdown_reply(
+        self,
+        handler: TelegramUpdateHandler,
+        mock_telegram_svc: AsyncMock,
+        mock_rag_svc: MagicMock,
+        mock_llm_svc: AsyncMock,
+    ) -> None:
+        from app.services.update_limiter import UpdateLimiter
+
+        handler._conversation_manager.start_registration(12345)
+        handler._conversation_manager.accept_gender(12345, Gender.LakiLaki)
+        handler._conversation_manager.accept_age(12345, 25)
+        handler._conversation_manager.accept_weight(12345, 70.0)
+        handler._conversation_manager.accept_height(12345, 175.0)
+        handler._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
+        handler._update_limiter = UpdateLimiter(window_seconds=60.0, max_calls=1)  # type: ignore[attr-defined]
+        mock_energy_record = MagicMock()
+        mock_energy_record.sisa_energi_kkal = 2000.0
+        handler._energy_svc.ensure_today = AsyncMock(return_value=mock_energy_record)
+
+        await handler.handle_update(_make_message_update(text="nasi goreng 150g", update_id=14))
+        await handler.handle_update(_make_message_update(text="ayam goreng 100g", update_id=15))
+
+        # First analysis runs; the second is dropped with a slow-down reply.
+        assert mock_rag_svc.retrieve_async.await_count == 1
+        mock_llm_svc.analyze_food.assert_awaited_once()
+        texts = [c.kwargs["text"] for c in mock_telegram_svc.send_message.call_args_list]
+        assert any("sebentar" in t.lower() or "lambat" in t.lower() for t in texts)
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,9 @@ URL, RAG and app settings) are declared here as typed, validated settings so
 that business logic never reads ``os.environ`` directly (SPEC section 5.1).
 """
 
+from ipaddress import ip_address
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -108,26 +110,36 @@ class Settings(BaseSettings):
     @field_validator("ollama_base_url")
     @classmethod
     def _allowlist_ollama_base_url(cls, value: str) -> str:
-        """SSRF guard for the self-hosted Ollama base URL.
-
-        Only the compose service name or loopback hosts are permitted; any
-        other host (public FQDN, raw IP, internal name) is rejected. See
-        SECURITY.md "Ollama base URL allowlist".
-        """
-        if not (value.startswith("http://") or value.startswith("https://")):
-            raise ValueError("ollama_base_url must be an http(s):// URL")
-        host = value.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
-        allowlist = {"localhost", "127.0.0.1", "ollama"}
-        if host not in allowlist:
+        """Restrict Ollama to the bundled service or loopback hosts."""
+        parsed = _parse_http_url(value, "ollama_base_url")
+        if parsed.hostname not in {"localhost", "127.0.0.1", "ollama"}:
             raise ValueError(
                 "ollama_base_url host must be one of ollama/localhost/127.0.0.1 "
                 "(SSRF allowlist; see SECURITY.md)."
             )
         return value
 
-    @field_validator("max_user_question_chars")
+    @field_validator("llm_base_url")
     @classmethod
-    def _require_positive_prompt_cap(cls, value: int) -> int:
-        if value <= 0:
-            raise ValueError("max_user_question_chars must be positive")
+    def _validate_llm_base_url(cls, value: str) -> str:
+        """Allow public HTTP(S) providers while rejecting private-network SSRF."""
+        parsed = _parse_http_url(value, "llm_base_url")
+        host = parsed.hostname
+        assert host is not None
+        try:
+            address = ip_address(host)
+        except ValueError:
+            return value
+        if not address.is_global:
+            raise ValueError("llm_base_url must not use a private or loopback IP address")
         return value
+
+
+def _parse_http_url(value: str, field_name: str):
+    """Parse a credential-free HTTP URL with an explicit hostname."""
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{field_name} must be an http(s):// URL with a hostname")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"{field_name} must not contain URL credentials")
+    return parsed

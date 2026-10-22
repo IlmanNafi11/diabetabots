@@ -6,6 +6,7 @@ previous day never mutates today's balance.
 """
 
 from datetime import UTC, date, datetime
+from uuid import UUID
 
 import pytest
 import pytest_asyncio
@@ -248,3 +249,48 @@ class TestDeclineConsumption:
 
         status = await service.decline_consumption(user_3.telegram_id, uuid.uuid4())
         assert status is ConfirmationStatus.NOT_FOUND
+
+
+class TestDeleteUserData:
+    """User-initiated data deletion (PDP compliance)."""
+
+    async def test_delete_user_data_removes_all_related_rows(
+        self,
+        async_session: AsyncSession,
+        user_3: User,
+    ) -> None:
+        pending_id = UUID(int=77)
+        async_session.add(
+            PendingAnalyses(
+                id=pending_id,
+                telegram_id=user_3.telegram_id,
+                nama_pangan="nasi goreng",
+                gram=100.0,
+                energi_kkal=250.0,
+                gl_aktual=20.0,
+                tanggal_wib=date(2026, 10, 22),
+            )
+        )
+        await async_session.commit()
+
+        from app.services.registration_service import RegistrationService
+
+        reg_svc = RegistrationService(async_session)
+        deleted = await reg_svc.delete_user_data(user_3.telegram_id)
+
+        assert deleted is True
+        remaining = await async_session.execute(
+            select(PendingAnalyses).where(PendingAnalyses.telegram_id == user_3.telegram_id)
+        )
+        assert remaining.scalar_one_or_none() is None
+
+    async def test_delete_user_data_unknown_user_returns_false(
+        self,
+        async_session: AsyncSession,
+    ) -> None:
+        from app.services.registration_service import RegistrationService
+
+        reg_svc = RegistrationService(async_session)
+        deleted = await reg_svc.delete_user_data(999999)
+
+        assert deleted is False

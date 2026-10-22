@@ -40,6 +40,7 @@ from app.services.nutrition_service import glycemic_load, nutrition_for_gram
 from app.services.rag_service import RAGService
 from app.services.registration_service import RegistrationService
 from app.services.telegram_service import TelegramService, TelegramUpdate, TelegramUpdateType
+from app.services.update_limiter import UpdateLimiter
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,6 +108,7 @@ class TelegramUpdateHandler:
         llm_svc: LLMService,
         session: AsyncSession | None = None,
         max_user_question_chars: int = 512,
+        update_limiter: UpdateLimiter | None = None,
     ) -> None:
         self._telegram_svc = telegram_svc
         self._conversation_manager = conversation_manager
@@ -116,7 +118,7 @@ class TelegramUpdateHandler:
         self._llm_svc = llm_svc
         self._session = session
         self._max_user_question_chars = max_user_question_chars
-
+        self._update_limiter = update_limiter
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -142,6 +144,9 @@ class TelegramUpdateHandler:
         if update.text == "/start":
             self._conversation_manager.start_registration(update.chat_id)
             await self._send_registration_gender_prompt(update.chat_id)
+            return
+        if update.text == "/hapus_data":
+            await self._handle_delete_data(update.chat_id)
             return
 
         conv = self._conversation_manager.get(update.chat_id)
@@ -194,6 +199,32 @@ class TelegramUpdateHandler:
             await self._handle_confirm_tidak(update.chat_id, pending_id, message_id)
         else:
             await self._send(update.chat_id, "Analisis tidak berlaku.")
+    # ------------------------------------------------------------------
+    # Data deletion (PDP right-to-erasure)
+    # ------------------------------------------------------------------
+
+    async def _handle_delete_data(self, chat_id: int) -> None:
+        """Delete the user's stored data and reset local conversation state."""
+        self._conversation_manager.clear(chat_id)
+        try:
+            deleted = await self._registration_svc.delete_user_data(chat_id)
+        except SQLAlchemyError:
+            log.error("Data deletion failed for chat %s", chat_id)
+            await self._send(
+                chat_id, "Maaf, gagal menghapus data. Silakan coba lagi beberapa saat."
+            )
+            return
+        if deleted:
+            await self._send(
+                chat_id,
+                "✅ Semua data Anda telah dihapus dari sistem kami. "
+                "Untuk menggunakan bot lagi, ketik /start.",
+            )
+        else:
+            await self._send(
+                chat_id,
+                "Kami tidak menemukan data Anda. Ketik /start untuk mulai menggunakan bot.",
+            )
 
     # ------------------------------------------------------------------
     # Registration step handlers
@@ -269,6 +300,16 @@ class TelegramUpdateHandler:
                 chat_id,
                 f"Pertanyaan terlalu panjang (maksimal "
                 f"{self._max_user_question_chars} karakter). Coba ketik lebih singkat.",
+            )
+            return
+
+        if (
+            self._update_limiter is not None
+            and not self._update_limiter.allow(chat_id)
+        ):
+            await self._send(
+                chat_id,
+                "Mohon tunggu sebentar sebelum mengirim pertanyaan berikutnya.",
             )
             return
 

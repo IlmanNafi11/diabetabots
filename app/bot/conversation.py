@@ -1,5 +1,7 @@
 """In-memory Telegram conversation state for registration and gram clarification."""
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -40,23 +42,67 @@ class Conversation:
 
 
 class ConversationManager:
-    """Track independent state machines by Telegram chat ID."""
+    """Track independent state machines by Telegram chat ID.
 
-    def __init__(self) -> None:
+    The store is bounded to keep memory flat under many one-off chatters:
+    inactive chats are pruned lazily on access after ``_ttl_seconds``, and the
+    dictionary is capped at ``_max_entries`` (oldest touched evicted first).
+    """
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float = 3600.0,
+        max_entries: int = 10000,
+        now: Callable[[], float] | None = None,
+    ) -> None:
         self._conversations: dict[int, Conversation] = {}
+        self._last_touched: dict[int, float] = {}
+        self._ttl_seconds = ttl_seconds
+        self._max_entries = max_entries
+        self._now = now or time.monotonic
 
     def get(self, chat_id: int) -> Conversation:
         """Return a chat's current conversation, creating an idle one if needed."""
-        return self._conversations.setdefault(chat_id, Conversation())
+        self._prune()
+        conversation = self._conversations.setdefault(chat_id, Conversation())
+        self._last_touched[chat_id] = self._now()
+        self._enforce_cap()
+        return conversation
+
+    def _enforce_cap(self) -> None:
+        """Evict the least-recently-touched conversations past the cap."""
+        overflow = len(self._conversations) - self._max_entries
+        if overflow > 0:
+            for chat_id in sorted(self._last_touched, key=self._last_touched.get)[:overflow]:
+                self._conversations.pop(chat_id, None)
+                self._last_touched.pop(chat_id, None)
+
+    def _prune(self) -> None:
+        """Evict expired conversations."""
+        now = self._now()
+        expired = [
+            chat_id
+            for chat_id, touched in self._last_touched.items()
+            if now - touched > self._ttl_seconds
+        ]
+        for chat_id in expired:
+            self._conversations.pop(chat_id, None)
+            self._last_touched.pop(chat_id, None)
+
 
     def clear(self, chat_id: int) -> None:
         """Forget all transient state for a chat."""
         self._conversations.pop(chat_id, None)
+        self._last_touched.pop(chat_id, None)
 
     def start_registration(self, chat_id: int) -> Conversation:
         """Start or restart registration from the gender prompt."""
+        self._prune()
         conversation = Conversation(state=ConversationState.AWAIT_GENDER)
         self._conversations[chat_id] = conversation
+        self._last_touched[chat_id] = self._now()
+        self._enforce_cap()
         return conversation
 
     def accept_gender(self, chat_id: int, gender: Gender) -> Conversation:

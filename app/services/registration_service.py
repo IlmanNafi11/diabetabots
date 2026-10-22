@@ -11,10 +11,10 @@ The upsert is idempotent: calling ``register_profile`` for an existing
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import User
+from app.models.models import ConsumptionLog, DailyEnergy, PendingAnalyses, User
 from app.services.tdee_service import calculate_bmr, calculate_tdee, pal_for_activity
 
 
@@ -94,3 +94,28 @@ class RegistrationService:
         """Return the User row for ``telegram_id``, or ``None`` if not registered."""
         result = await self._session.execute(select(User).where(User.telegram_id == telegram_id))
         return result.scalar_one_or_none()
+
+    async def delete_user_data(self, telegram_id: int) -> bool:
+        """Delete every row owned by ``telegram_id`` (PDP right-to-erasure).
+
+        Removes the user's profile and all derived records (daily energy,
+        consumption log, pending analyses) in dependency order. Returns
+        ``False`` when the user does not exist; the caller commits the
+        transaction.
+        """
+        user = await self.get_user(telegram_id)
+        if user is None:
+            return False
+
+        await self._session.execute(
+            delete(PendingAnalyses).where(PendingAnalyses.telegram_id == telegram_id)
+        )
+        await self._session.execute(
+            delete(ConsumptionLog).where(ConsumptionLog.telegram_id == telegram_id)
+        )
+        await self._session.execute(
+            delete(DailyEnergy).where(DailyEnergy.telegram_id == telegram_id)
+        )
+        await self._session.execute(delete(User).where(User.telegram_id == telegram_id))
+        await self._session.flush()
+        return True

@@ -234,9 +234,14 @@ class RAGService:
         )
 
     def close(self) -> None:
-        """Release the process-lifetime HTTP pool and ChromaDB client."""
+        """Release resources owned by this service instance.
+
+        ChromaDB's ``clear_system_cache`` is process-wide and would invalidate
+        unrelated ``PersistentClient`` instances, so it is intentionally not
+        called here. Dropping this instance releases its client naturally.
+        """
         self._embedder.close()
-        self._client.clear_system_cache()
+        self._collection = None
 
 
 # ---------------------------------------------------------------------------

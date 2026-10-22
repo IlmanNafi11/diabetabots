@@ -247,6 +247,59 @@ class TestRAGServiceConstruction:
             elapsed = asyncio.get_running_loop().time() - started
             assert elapsed < 0.15, f"event loop was blocked: {elapsed:.2f}s"
 
+    def test_close_closes_embedder_but_not_global_chroma_cache(
+        self, mock_settings: MagicMock
+    ) -> None:
+        """close() releases the embedder pool; the ChromaDB system cache is a
+        process-wide registry shared by every PersistentClient and must not be
+        cleared from a single service instance."""
+        embedder = MagicMock()
+        client = MagicMock()
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=embedder),
+            patch.object(RAGService, "_make_client", return_value=client),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+
+        service.close()
+
+        embedder.close.assert_called_once_with()
+        client.clear_system_cache.assert_not_called()
+
+    def test_retrieve_propagates_embedder_failure(self, mock_settings: MagicMock) -> None:
+        """A failed embed call must surface to the caller (handler catches it),
+        not be swallowed by RAGService."""
+        embedder = MagicMock()
+        embedder.embed_query.side_effect = RuntimeError("ollama unreachable")
+        collection = MagicMock()
+        client = MagicMock()
+        client.get_collection.return_value = collection
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=embedder),
+            patch.object(RAGService, "_make_client", return_value=client),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+
+        with pytest.raises(RuntimeError, match="ollama unreachable"):
+            service.retrieve("nasi")
+
+    def test_retrieve_propagates_chroma_failure(self, mock_settings: MagicMock) -> None:
+        """A ChromaDB query failure must surface to the caller."""
+        embedder = MagicMock()
+        embedder.embed_query.return_value = [0.1, 0.2]
+        client = MagicMock()
+        collection = MagicMock()
+        collection.query.side_effect = RuntimeError("chroma broken")
+        client.get_collection.return_value = collection
+        with (
+            patch.object(RAGService, "_make_embedder", return_value=embedder),
+            patch.object(RAGService, "_make_client", return_value=client),
+        ):
+            service = RAGService(settings=mock_settings)  # type: ignore[arg-type]
+
+        with pytest.raises(RuntimeError, match="chroma broken"):
+            service.retrieve("nasi")
+
 
 # retrieve
 # ---------------------------------------------------------------------------

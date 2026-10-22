@@ -127,3 +127,39 @@ class TestChatIsolation:
 
     def test_clear_unknown_chat_is_noop(self, manager: ConversationManager) -> None:
         manager.clear(999)  # must not raise
+
+    def test_get_prunes_expired_idle_chats(self, manager: ConversationManager) -> None:
+        """Memory must stay bounded: idle chats are evicted after a TTL."""
+        manager._now = lambda: 100.0
+        manager.start_registration(1)
+        assert manager.get(1).state is ConversationState.AWAIT_GENDER
+        manager.accept_gender(1, Gender.LakiLaki)
+
+        # Time passes; touching another chat triggers lazy pruning.
+        manager._now = lambda: 100.0 + manager._ttl_seconds + 1.0
+        manager.get(2)
+
+        assert 1 not in manager._conversations
+
+    def test_max_entries_evicts_oldest_conversation(self, manager: ConversationManager) -> None:
+        manager._now = lambda: 1000.0
+        manager._max_entries = 2
+
+        manager.start_registration(1)
+        manager._now = lambda: 1001.0
+        manager.start_registration(2)
+        manager._now = lambda: 1002.0
+        manager.start_registration(3)
+
+        # Oldest (chat 1) evicted; newer chats retained.
+        assert 1 not in manager._conversations
+        assert manager.get(2).state is ConversationState.AWAIT_GENDER
+        assert manager.get(3).state is ConversationState.AWAIT_GENDER
+
+    def test_touch_keeps_active_conversation_alive(self, manager: ConversationManager) -> None:
+        manager._now = lambda: 100.0
+        manager.start_registration(1)
+        manager._now = lambda: 100.0 + manager._ttl_seconds - 1.0
+        manager.get(1)
+
+        assert 1 in manager._conversations

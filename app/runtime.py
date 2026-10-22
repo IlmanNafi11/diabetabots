@@ -36,6 +36,7 @@ from app.services.rag_service import RAGService
 from app.services.registration_service import RegistrationService
 from app.services.scheduler import build_reset_scheduler
 from app.services.telegram_service import TelegramService, TelegramUpdate
+from app.services.update_limiter import UpdateLimiter
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +107,9 @@ class AppRuntime:
         try:
             self._rag_svc.close()
         except Exception:
-            log.exception("Failed to close RAG service")
+            log.error("Failed to close RAG service")
+            log.debug("RAG close failure detail", exc_info=True)
+
         log.info("AppRuntime stopped")
 
     # ------------------------------------------------------------------
@@ -123,6 +126,7 @@ class AppRuntime:
             except Exception:
                 await session.rollback()
                 log.error("Failed to handle update %s", update.update_id)
+                log.debug("Update handler failure detail", exc_info=True)
                 raise
 
     # ------------------------------------------------------------------
@@ -163,6 +167,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
     rag_svc = RAGService(settings)
     llm_svc = LLMService(settings)
     conversation = ConversationManager()
+    update_limiter = UpdateLimiter()
     scheduler = build_reset_scheduler(sessionmaker)
 
     def handler_factory(session: AsyncSession) -> TelegramUpdateHandler:
@@ -175,6 +180,7 @@ def build_runtime(settings: Settings | None = None) -> AppRuntime:
             llm_svc=llm_svc,
             session=session,
             max_user_question_chars=settings.max_user_question_chars,
+            update_limiter=update_limiter,
         )
 
     return AppRuntime(
