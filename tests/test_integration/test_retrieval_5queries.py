@@ -2,9 +2,10 @@
 
 Reproduces the five PRD §7.3 queries on a temporary ChromaDB collection built
 from the real dataset (``data/tkpi-gi-final.jsonl``) with the spike-winning
-chunking + embedding configuration from ``Settings``. Asserts that the mean
-Precision@5 meets or exceeds the binding spike threshold (0.800). Writes a raw
-evidence log to ``reports/logs/retrieval-raw.log`` (§7.4 audit trail).
+chunking configuration from ``Settings`` and the self-hosted Ollama embedder.
+Asserts that the mean Precision@5 meets or exceeds the binding spike threshold
+(0.800). Writes a raw evidence log to ``reports/logs/retrieval-raw.log``
+(§7.4 audit trail).
 """
 
 from __future__ import annotations
@@ -14,13 +15,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import chromadb
+import httpx
 import pytest
-from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
 from app.data.embedder import build_documents, index_documents
 from app.data.parser import load_records
 from app.evaluation.retrieval import QUERY_CASES, mean_precision_at_5, precision_at_k
+from app.services.ollama_embedder import OllamaEmbedder
 
 DATASET_PATH = Path("data/tkpi-gi-final.jsonl")
 RAW_LOG_PATH = Path("reports/logs/retrieval-raw.log")
@@ -33,15 +35,22 @@ def settings() -> Settings:
 
 
 @pytest.fixture()
-def _skip_without_credentials(settings: Settings) -> None:
-    if settings.llm_api_key.startswith("your-"):
-        pytest.skip("No real LLM credentials in environment; retrieval needs embeddings.")
+def _skip_when_ollama_unreachable() -> None:
+    """Skip when the configured Ollama endpoint does not answer ``/api/version``."""
+    settings = Settings()
+    try:
+        httpx.get(
+            f"{settings.ollama_base_url.rstrip('/')}/api/version",
+            timeout=5.0,
+        ).raise_for_status()
+    except Exception as error:  # probe must skip on any transport failure
+        pytest.skip(f"Ollama not reachable at {settings.ollama_base_url}: {error}")
 
 
 @pytest.fixture()
 def indexed_collection(
-    settings: Settings, _skip_without_credentials: None, tmp_path: Path
-) -> tuple[chromadb.Collection, OpenAIEmbeddings]:
+    settings: Settings, _skip_when_ollama_unreachable: None, tmp_path: Path
+) -> tuple[chromadb.Collection, OllamaEmbedder]:
     """Index the real dataset into an ephemeral collection using spike config."""
     client = chromadb.PersistentClient(path=str(tmp_path))
     collection = client.get_or_create_collection(
@@ -50,12 +59,9 @@ def indexed_collection(
     )
     records = load_records(DATASET_PATH)
     documents = build_documents(records, settings.chunking_strategy)
-    embedder = OpenAIEmbeddings(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model=settings.embedding_model_name,
-        dimensions=settings.embedding_dim,
-        check_embedding_ctx_length=False,
+    embedder = OllamaEmbedder(
+        base_url=settings.ollama_base_url,
+        read_timeout_seconds=settings.ollama_read_timeout_seconds,
     )
     index_documents(documents, collection, embedder)
     return collection, embedder
@@ -63,7 +69,7 @@ def indexed_collection(
 
 @pytest.mark.integration
 def test_precision_at_5_meets_spike_threshold(
-    indexed_collection: tuple[chromadb.Collection, OpenAIEmbeddings],
+    indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
     settings: Settings,
 ) -> None:
     collection, embedder = indexed_collection
@@ -86,7 +92,7 @@ def test_precision_at_5_meets_spike_threshold(
 
 @pytest.mark.integration
 def test_retrieval_uses_configured_top_k(
-    indexed_collection: tuple[chromadb.Collection, OpenAIEmbeddings],
+    indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
     settings: Settings,
 ) -> None:
     """Every query returns exactly ``rag_top_k`` documents."""
@@ -109,3 +115,28 @@ def _write_raw_log(results: list[dict]) -> None:
                 )
                 + "\n"
             )
+@pytest.mark.integration
+def test_indexed_collection_embeds_with_ollama(
+    indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
+) -> None:
+    """The embedding fixture targets the self-hosted Ollama endpoint."""
+    _, embedder = indexed_collection
+    assert isinstance(embedder, OllamaEmbedder)
+
+
+@pytest.mark.integration
+def test_retrieval_probes_ollama_version_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Ollama skip fixture probes ``/api/version`` and skips on failure."""
+    calls: list[str] = []
+
+    def _down(*args: object, **kwargs: object) -> object:
+        calls.append("probed")
+        raise ConnectionError("ollama down")
+
+    monkeypatch.setattr(httpx, "get", _down)
+    with pytest.raises(pytest.skip.Exception) as caught:
+        _skip_when_ollama_unreachable.__wrapped__()
+    assert calls == ["probed"]
+    assert "ollama down" in str(caught.value)

@@ -5,7 +5,8 @@ Verifies the end-to-end pipeline: dataset → ChromaDB → retrieval → LLM ana
 truth values loaded directly from ``data/tkpi-gi-final.jsonl``.
 
 The test is marked ``@pytest.mark.integration`` and skips automatically when
-no real LLM credentials are available (``your-*`` sentinel).
+the self-hosted Ollama endpoint is unreachable or no real LLM credentials are
+available (``your-*`` sentinel).
 """
 
 from __future__ import annotations
@@ -15,13 +16,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import chromadb
+import httpx
 import pytest
-from langchain_openai import OpenAIEmbeddings
 
 from app.config import Settings
 from app.data.embedder import build_documents, index_documents
 from app.data.parser import load_records
 from app.services.llm_service import LLMService, format_food_context
+from app.services.ollama_embedder import OllamaEmbedder
 from app.services.rag_service import RAGService
 
 DATASET_PATH = Path("data/tkpi-gi-final.jsonl")
@@ -45,16 +47,22 @@ def _skip_without_llm_credentials(settings: Settings) -> None:
 
 
 @pytest.fixture(scope="session")
-def _skip_without_embedding_credentials(settings: Settings) -> None:
-    """Skip if embedding credentials are not configured."""
-    if settings.llm_api_key.startswith("your-"):
-        pytest.skip("No real credentials; integration test requires embedding endpoint.")
+def _skip_when_ollama_unreachable() -> None:
+    """Skip when the configured Ollama endpoint does not answer ``/api/version``."""
+    settings = Settings()
+    try:
+        httpx.get(
+            f"{settings.ollama_base_url.rstrip('/')}/api/version",
+            timeout=5.0,
+        ).raise_for_status()
+    except Exception as error:  # probe must skip on any transport failure
+        pytest.skip(f"Ollama not reachable at {settings.ollama_base_url}: {error}")
 
 
 @pytest.fixture(scope="session")
 def indexed_collection(
     settings: Settings,
-    _skip_without_embedding_credentials: None,
+    _skip_when_ollama_unreachable: None,
     tmp_path_factory: pytest.TempPathFactory,
 ) -> chromadb.Collection:
     """Index the real dataset once per session into an ephemeral collection."""
@@ -66,12 +74,9 @@ def indexed_collection(
     )
     records = load_records(DATASET_PATH)
     documents = build_documents(records, settings.chunking_strategy)
-    embedder = OpenAIEmbeddings(
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model=settings.embedding_model_name,
-        dimensions=settings.embedding_dim,
-        check_embedding_ctx_length=False,
+    embedder = OllamaEmbedder(
+        base_url=settings.ollama_base_url,
+        read_timeout_seconds=settings.ollama_read_timeout_seconds,
     )
     index_documents(documents, collection, embedder)
     return collection
@@ -79,7 +84,7 @@ def indexed_collection(
 
 @pytest.fixture(scope="session")
 def ground_truth(
-    _skip_without_embedding_credentials: None,
+    _skip_when_ollama_unreachable: None,
 ) -> dict[str, dict[str, float]]:
     """Load ground-truth nutrition values from the dataset keyed by food name."""
     records = load_records(DATASET_PATH)
