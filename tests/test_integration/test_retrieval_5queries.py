@@ -115,6 +115,8 @@ def _write_raw_log(results: list[dict]) -> None:
                 )
                 + "\n"
             )
+
+
 @pytest.mark.integration
 def test_indexed_collection_embeds_with_ollama(
     indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
