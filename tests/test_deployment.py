@@ -61,3 +61,31 @@ def test_external_postgres_override_removes_local_dependency_and_service() -> No
     assert "postgres: !reset null" in override
     assert "external: true" in override
     assert "${EXTERNAL_NETWORK:?EXTERNAL_NETWORK must be set}" in override
+
+
+def test_compose_mode_a_includes_ollama_server_and_init_with_volume() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text()
+
+    assert "  ollama:" in compose
+    assert "  ollama-init:" in compose
+    # The server keeps downloaded models in a named volume; the one-shot init
+    # reuses the same volume so the pull happens exactly once.
+    assert "ollama_data:/root/.ollama" in compose
+    assert "snowflake-arctic-embed2" in compose
+    assert "service_completed_successfully" in compose
+
+
+def test_external_ollama_override_resets_services_and_requires_base_url() -> None:
+    override = (ROOT / "docker-compose.external-ollama.yml").read_text()
+
+    assert "ollama: !reset null" in override
+    assert "ollama-init: !reset null" in override
+    assert "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}" in override
+
+
+def test_env_example_documents_ollama_embedding_defaults() -> None:
+    env = (ROOT / ".env.example").read_text()
+
+    assert "OLLAMA_BASE_URL=http://ollama:11434" in env
+    assert "EMBEDDING_MODEL_NAME=snowflake-arctic-embed2" in env
+    assert "EMBEDDING_DIM=1024" in env

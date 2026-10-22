@@ -1,0 +1,31 @@
+# Mode B — Ollama already running outside this compose project.
+#
+# Usage:
+#   export OLLAMA_BASE_URL=http://<ollama-host>:11434
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.external-ollama.yml up -d
+#
+# This override:
+#   - drops the bundled `ollama` and `ollama-init` services (`!reset`);
+#   - removes the app's dependency on the bundled init job
+#     (`depends_on: !reset []`);
+#   - requires OLLAMA_BASE_URL to be set explicitly so the app never silently
+#     points at the removed bundled service name.
+#
+# Combinable with docker-compose.external-postgres.yml to run the app fully
+# against external services:
+#   docker compose -f docker-compose.yml \
+#                  -f docker-compose.external-postgres.yml \
+#                  -f docker-compose.external-ollama.yml up -d
+#
+# No application code changes are required — only environment/override files.
+# `!reset` / `!override` require Docker Compose v2.24+.
+
+services:
+  app:
+    depends_on: !reset []
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}
+
+  ollama: !reset null
+  ollama-init: !reset null

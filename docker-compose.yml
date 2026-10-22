@@ -10,6 +10,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   # Mode A: PostgreSQL provided by compose.
@@ -30,6 +32,35 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # Mode A: Ollama provided by compose (self-hosted embeddings).
+  # Mode B: reset these services with docker-compose.external-ollama.yml and
+  # point OLLAMA_BASE_URL at an external host.
+  ollama:
+    image: ollama/ollama:0.40.6
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # One-shot model pull: fetches the embedding model once and exits. The app
+  # starts only after this succeeds, so the first embedding call never races
+  # an unloaded model.
+  ollama-init:
+    image: ollama/ollama:0.40.6
+    command: ["sh", "-c", "ollama pull snowflake-arctic-embed2"]
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
 volumes:
   pg_data:
   chroma_data:
+  ollama_data:
