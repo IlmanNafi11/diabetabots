@@ -119,6 +119,7 @@ class TelegramUpdateHandler:
         self._session = session
         self._max_user_question_chars = max_user_question_chars
         self._update_limiter = update_limiter
+
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
@@ -199,6 +200,7 @@ class TelegramUpdateHandler:
             await self._handle_confirm_tidak(update.chat_id, pending_id, message_id)
         else:
             await self._send(update.chat_id, "Analisis tidak berlaku.")
+
     # ------------------------------------------------------------------
     # Data deletion (PDP right-to-erasure)
     # ------------------------------------------------------------------
@@ -303,10 +305,7 @@ class TelegramUpdateHandler:
             )
             return
 
-        if (
-            self._update_limiter is not None
-            and not self._update_limiter.allow(chat_id)
-        ):
+        if self._update_limiter is not None and not self._update_limiter.allow(chat_id):
             await self._send(
                 chat_id,
                 "Mohon tunggu sebentar sebelum mengirim pertanyaan berikutnya.",

@@ -154,8 +154,7 @@ class TelegramService:
     def __repr__(self) -> str:
         """Never leak the bot token when the service is logged or repr'd."""
         return (
-            f"TelegramService(token={'<redacted>'}, "
-            f"running={self._running}, offset={self._offset})"
+            f"TelegramService(token={'<redacted>'}, running={self._running}, offset={self._offset})"
         )
 
     def __init__(
@@ -224,9 +223,7 @@ class TelegramService:
     async def _poll_loop(self, timeout: int) -> list[TelegramUpdate]:
         """Single poll iteration with retry."""
         try:
-            return await self._fetch_updates_with_retry(
-                timeout=timeout, offset=self._offset
-            )
+            return await self._fetch_updates_with_retry(timeout=timeout, offset=self._offset)
         except Exception:
             log.error("Poll failed after retries")
             return []

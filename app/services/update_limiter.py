@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 class UpdateLimiter:
     """Sliding-window per-chat limiter with O(1)-amortized bookkeeping."""
+
     def __init__(
         self,
         *,

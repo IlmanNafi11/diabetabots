@@ -80,4 +80,3 @@ def create_production_app() -> FastAPI:
 
 
 app = create_app()
-

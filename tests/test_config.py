@@ -272,6 +272,7 @@ def test_settings_accepts_public_llm_base_url(
     s = Settings()
     assert s.llm_base_url == "https://llm.example.com/v1"
 
+
 def test_settings_rejects_non_positive_max_user_question_chars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

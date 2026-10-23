@@ -90,7 +90,6 @@ class ConversationManager:
             self._conversations.pop(chat_id, None)
             self._last_touched.pop(chat_id, None)
 
-
     def clear(self, chat_id: int) -> None:
         """Forget all transient state for a chat."""
         self._conversations.pop(chat_id, None)

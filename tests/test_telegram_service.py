@@ -400,13 +400,9 @@ class TestHealthCheck:
                 await svc.get_me()
 
     @pytest.mark.asyncio()
-    async def test_log_lines_never_contain_bot_token(
-        self, mock_settings: MagicMock
-    ) -> None:
+    async def test_log_lines_never_contain_bot_token(self, mock_settings: MagicMock) -> None:
         """The Telegram token must not appear in any log output."""
-        with patch("httpx.Client"), patch(
-            "app.services.telegram_service.log"
-        ) as mock_log:
+        with patch("httpx.Client"), patch("app.services.telegram_service.log") as mock_log:
             from app.services.telegram_service import TelegramService
 
             svc = TelegramService(settings=mock_settings)

@@ -210,6 +210,7 @@ async def test_stop_continues_cleanup_when_rag_close_fails(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
     """A failing RAG close must not mask the rest of the shutdown path."""
+
     class BoomRag:
         def close(self) -> None:
             raise RuntimeError("boom")

@@ -525,9 +525,7 @@ class TestFoodQuery:
         handler_with_cap._conversation_manager.accept_height(12345, 175.0)
         handler_with_cap._conversation_manager.accept_activity(12345, ActivityLevel.Ringan)
 
-        await handler_with_cap.handle_update(
-            _make_message_update(text="a" * 21, update_id=10)
-        )
+        await handler_with_cap.handle_update(_make_message_update(text="a" * 21, update_id=10))
 
         mock_rag_svc.retrieve_async.assert_not_awaited()
         mock_llm_svc.analyze_food.assert_not_awaited()
