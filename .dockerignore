@@ -17,3 +17,5 @@ data
 .env.*
 *.md
 docker-compose*.yml
+
+# gate verification probe
