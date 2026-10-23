@@ -1,0 +1,19 @@
+# Keep the build context to what the image actually needs.
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+*.py[cod]
+.coverage
+.coverage.*
+htmlcov
+reports
+chroma_db
+data
+.env
+.env.*
+*.md
+docker-compose*.yml
