@@ -24,6 +24,15 @@ if TYPE_CHECKING:
     from app.runtime import AppRuntime
 
 
+def parse_allowed_hosts(raw: str) -> list[str]:
+    """Normalize a comma-separated hostname setting into a middleware list."""
+    hosts = [part.strip().lower() for part in raw.split(",")]
+    hosts = [host for host in hosts if host]
+    if "testserver" not in hosts:
+        hosts.append("testserver")
+    return hosts
+
+
 def create_app(
     *,
     runtime: "AppRuntime | None" = None,
@@ -74,9 +83,12 @@ def create_app(
 
 def create_production_app() -> FastAPI:
     """uvicorn factory: build the app wired to the real services."""
+    from app.config import Settings
     from app.runtime import build_runtime
 
-    return create_app(runtime=build_runtime(), production=True)
+    settings = Settings()
+    hosts = parse_allowed_hosts(settings.allowed_hosts)
+    return create_app(runtime=build_runtime(settings), production=True, allowed_hosts=hosts)
 
 
 app = create_app()
