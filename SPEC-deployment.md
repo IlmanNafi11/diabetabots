@@ -70,6 +70,18 @@ gitleaks scan scoped to the released commit's history, and only then a Docker
 Hub push tagged from the semver tag (`DOCKERHUB_USERNAME` repository variable,
 `DOCKERHUB_TOKEN` secret).
 
+Branch promotion is `dev` → `staging` → `main`, and a release tag is cut from
+`main`. A repository ruleset protects `staging` and `main`: no direct pushes,
+no force pushes, no deletion, a pull request is required, and the
+`Lint, format, unit & integration` check must pass on an up-to-date branch.
+`dev` and any experimental branches stay unprotected.
+
+`main` has no history shared with `dev` yet, so the first promotion needs a
+one-time bootstrap: push `staging`'s commit to `main` (temporarily scoping the
+ruleset, or with an authorised bypass), after which every later change reaches
+`main` through a pull request like any other branch. Until that bootstrap
+happens the default branch is empty.
+
 Ollama is not available in CI. Tests that need a live embedding endpoint carry
 `@pytest.mark.requires_ollama` and are deselected explicitly by the marker
 expression above — never skipped implicitly at runtime.
