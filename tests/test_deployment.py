@@ -1,5 +1,6 @@
 """Deployment contract tests for task-14."""
 
+import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -37,9 +38,13 @@ def test_dockerfile_runs_as_non_root_and_exposes_healthcheck() -> None:
     assert "USER appuser" in dockerfile
     assert "EXPOSE 8000" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    # The production entrypoint must use the runtime factory, otherwise the
-    # Telegram polling loop and reset scheduler never start (task-14).
-    assert '"--factory", "app.main:create_production_app"' in dockerfile
+    # The production command now lives in the entrypoint: the default must
+    # still boot the runtime factory, otherwise the Telegram polling loop
+    # and reset scheduler never start (task-14).
+    assert 'ENTRYPOINT ["docker-entrypoint"]' in dockerfile
+    assert 'CMD ["serve"]' in dockerfile
+    entrypoint = (ROOT / "docker-entrypoint.sh").read_text()
+    assert "create_production_app" in entrypoint
 
 
 def test_compose_mode_a_contains_app_postgres_and_persistent_volumes() -> None:
@@ -78,6 +83,34 @@ def test_external_ollama_override_resets_services_and_requires_base_url() -> Non
     assert "ollama: !reset null" in override
     assert "ollama-init: !reset null" in override
     assert "${OLLAMA_BASE_URL:?OLLAMA_BASE_URL must be set}" in override
+
+
+def test_docker_entrypoint_dispatches_index_command() -> None:
+    dispatch = (ROOT / "docker-entrypoint.sh").read_text()
+
+    assert "serve)" in dispatch
+    assert "index)" in dispatch
+    assert "index_data" in dispatch
+
+
+def test_docker_entrypoint_rejects_unknown_command() -> None:
+    result = subprocess.run(
+        ["sh", str(ROOT / "docker-entrypoint.sh"), "no-such-command"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 64
+    assert "no-such-command" in result.stderr
+
+
+def test_dockerfile_installs_entrypoint_and_indexing_payload() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text()
+
+    assert "docker-entrypoint.sh" in dockerfile
+    assert "COPY data ./data" in dockerfile
+    assert "COPY scripts ./scripts" in dockerfile
 
 
 def test_env_example_documents_ollama_embedding_defaults() -> None:
