@@ -45,13 +45,37 @@ environment-controlled; no secret is copied into the image.
 
 ## Dependencies
 
-- Python 3.11 slim image.
-- Pinned dependencies from `requirements.txt`.
+- Python 3.12 slim image (`python:3.12-slim`).
+- Pinned dependencies resolved by `uv` from `pyproject.toml` and `uv.lock`;
+  the image installs them with `uv sync --frozen --no-dev`.
 - PostgreSQL 16 for Mode A, or a reachable PostgreSQL instance for Mode B.
 - Ollama serving `snowflake-arctic-embed2` for embeddings — bundled in Mode A,
   external in Mode B (set `OLLAMA_BASE_URL`).
 - Docker Compose v2.24+ for the `!reset` override tags.
 - Environment variables documented in `.env.example`.
+
+## Continuous integration and release gates
+
+Two GitHub Actions workflows enforce the same quality bar before anything ships.
+
+`.github/workflows/ci.yml` runs on pull requests into `staging` and `main`, and
+on pushes to `staging`: `ruff check`, `ruff format --check`, unit tests
+(`-m "not integration"`), and integration tests
+(`-m "integration and not requires_ollama"`) against a PostgreSQL 16 service
+container. `FAIL_ON_SKIP=1` makes the session fail on any unexpected skip, so a
+green run means every selected test actually executed.
+
+`.github/workflows/release.yml` runs on `v*` tags: the same quality job, a
+gitleaks scan scoped to the released commit's history, and only then a Docker
+Hub push tagged from the semver tag (`DOCKERHUB_USERNAME` repository variable,
+`DOCKERHUB_TOKEN` secret).
+
+Ollama is not available in CI. Tests that need a live embedding endpoint carry
+`@pytest.mark.requires_ollama` and are deselected explicitly by the marker
+expression above — never skipped implicitly at runtime.
+
+Local test database: any PostgreSQL reachable through `TEST_DATABASE_URL`
+defaults to `postgresql+asyncpg://diabetabot:diabetabot@localhost:5432/diabetabot_test`.
 
 ## Data Flow
 
@@ -142,6 +166,12 @@ the app against external PostgreSQL and external Ollama at the same time.
 - [x] Mode B uses an external PostgreSQL network and requires no code change.
 - [x] Mode B uses an external Ollama endpoint and requires no code change.
 - [x] Shutdown stops polling and scheduler and disposes the database engine.
+- [x] Image builds from `python:3.12-slim` and installs the locked dependency
+  set with `uv sync --frozen --no-dev`.
+- [x] CI blocks `staging` merges on lint, format, unit, and integration failures.
+- [x] A skipped test fails the CI run instead of producing a green build.
+- [x] A `v*` tag publishes the image to Docker Hub only after quality and
+  gitleaks gates pass.
 
 ## Boundaries
 

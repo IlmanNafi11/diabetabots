@@ -50,8 +50,8 @@ Build order: `embedder-client` → `index-migration` + `deploy-optional-services
 
 ## Tech Stack
 
-- Python 3.11, FastAPI, ChromaDB 1.5.9, httpx 0.28.1 (already in
-  `requirements.txt` — no new runtime dependencies).
+- Python 3.12, FastAPI, ChromaDB 1.5.9, httpx 0.28.1 (already in
+  `pyproject.toml` — no new runtime dependencies).
 - Ollama 0.40.6 (host) / `ollama/ollama` container, model
   `snowflake-arctic-embed2:latest` (1.2 GB).
 - `langchain-openai` stays only for `ChatOpenAI` (chat LLM path unchanged).
@@ -131,7 +131,7 @@ docs/intent/arctic-embedding-migration.md → intent (gitignored)
 
 ## Code Style
 
-Repository conventions (ruff, line-length 100, py311 target) apply unchanged.
+Repository conventions (ruff, line-length 100, py312 target) apply unchanged.
 Embedder follows the existing `EmbeddingClient` Protocol so
 `app/data/embedder.py` stays untouched:
 
@@ -210,7 +210,8 @@ class OllamaEmbedder:
 - Keeping a side-by-side A/B collection after cutover.
 - Adding a new compose service beyond `ollama`/`ollama-init` (e.g. reverse
   proxy, TLS).
-- Touching `requirements.txt` or `langchain-openai`.
+- Touching the pinned dependency set in `pyproject.toml`/`uv.lock` or
+  `langchain-openai`.
 - Merging any experimental artifact from `worktree/eksperimental`.
 - Changing the DB image/version or adding a migration system.
 
