@@ -33,15 +33,25 @@ generic message instead (`Maaf, analisis gagal sementara`, etc.).
 an arbitrary internal host:
 
 ```
-Allowed hosts:
+Default allowlist:
   - ollama        (compose service name, mode A)
   - localhost     (loopback)
   - 127.0.0.1     (loopback)
 ```
 
-Raw IP addresses other than `127.0.0.1` (including private ranges
-`10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`) and arbitrary public FQDNs are
-rejected. Only `http://` and `https://` schemes are accepted.
+An operator widens the list with `OLLAMA_ALLOWED_HOSTS`, a comma-separated
+list of bare hostnames or IP addresses:
+
+```
+OLLAMA_ALLOWED_HOSTS=ollama.internal,192.168.1.9
+```
+
+Entries must not contain a scheme, port, or path. `Settings` rejects such an
+entry instead of silently ignoring it, because `http://host:11434` in a
+hostname field is a configuration mistake, not an address. Raw IP addresses
+other than `127.0.0.1` and arbitrary public FQDNs remain rejected unless the
+operator lists them explicitly. Only `http://` and `https://` schemes are
+accepted for `OLLAMA_BASE_URL` itself.
 
 ## Prompt length cap
 

@@ -9,7 +9,7 @@ from ipaddress import ip_address
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     llm_api_key: str = "your-api-key"
     chat_model_name: str = "your-chat-model"
     ollama_base_url: str = "http://ollama:11434"
+    # Extra hostnames permitted as an Ollama endpoint, alongside the built-in
+    # ollama/localhost/127.0.0.1 defaults. Comma-separated, hostname or IP.
+    # Empty by default: the SSRF allowlist stays closed until an operator
+    # explicitly names the host it wants to reach (see SECURITY.md).
+    ollama_allowed_hosts: str = ""
     # A single interactive query (one document) should answer fast: when the
     # endpoint stalls, the sync embed call must fail quickly so the Telegram
     # handler's worker thread is not pinned and the container healthcheck
@@ -78,6 +83,10 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, gt=0, le=65535)
     timezone: str = "Asia/Jakarta"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    # Hostnames accepted by the production TrustedHostMiddleware. The default
+    # covers the compose healthcheck (127.0.0.1) and compose service names; a
+    # deployer that exposes the app adds its public hostname here.
+    allowed_hosts: str = "127.0.0.1,localhost,app,testserver"
 
     @field_validator("database_url")
     @classmethod
@@ -109,15 +118,35 @@ class Settings(BaseSettings):
 
     @field_validator("ollama_base_url")
     @classmethod
-    def _allowlist_ollama_base_url(cls, value: str) -> str:
-        """Restrict Ollama to the bundled service or loopback hosts."""
-        parsed = _parse_http_url(value, "ollama_base_url")
-        if parsed.hostname not in {"localhost", "127.0.0.1", "ollama"}:
-            raise ValueError(
-                "ollama_base_url host must be one of ollama/localhost/127.0.0.1 "
-                "(SSRF allowlist; see SECURITY.md)."
-            )
+    def _validate_ollama_base_url_syntax(cls, value: str) -> str:
+        """Require a credential-free http(s) URL; the host is checked after all fields load."""
+        _parse_http_url(value, "ollama_base_url")
         return value
+
+    @field_validator("ollama_allowed_hosts")
+    @classmethod
+    def _validate_extra_ollama_hosts(cls, value: str) -> str:
+        """Accept bare hostnames or IPs only, so an entry is never a URL."""
+        hosts = _split_hosts(value)
+        for host in hosts:
+            if any(marker in host for marker in ("://", "/", ":")):
+                raise ValueError(
+                    "ollama_allowed_hosts entries must be bare hostnames or IP "
+                    "addresses without scheme, port, or path."
+                )
+        return ",".join(hosts)
+
+    @model_validator(mode="after")
+    def _enforce_ollama_host_allowlist(self) -> "Settings":
+        """Refuse an Ollama endpoint that the operator has not allowlisted."""
+        parsed = _parse_http_url(self.ollama_base_url, "ollama_base_url")
+        allowed = _DEFAULT_OLLAMA_HOSTS | set(_split_hosts(self.ollama_allowed_hosts))
+        if (parsed.hostname or "").lower() not in allowed:
+            raise ValueError(
+                "ollama_base_url host must be ollama/localhost/127.0.0.1, or listed "
+                "explicitly in OLLAMA_ALLOWED_HOSTS (SSRF allowlist; see SECURITY.md)."
+            )
+        return self
 
     @field_validator("llm_base_url")
     @classmethod
@@ -133,6 +162,15 @@ class Settings(BaseSettings):
         if not address.is_global:
             raise ValueError("llm_base_url must not use a private or loopback IP address")
         return value
+
+
+_DEFAULT_OLLAMA_HOSTS = frozenset({"ollama", "localhost", "127.0.0.1"})
+
+
+def _split_hosts(value: str) -> list[str]:
+    """Split a comma-separated allowlist entry into normalized hostnames."""
+    parts = [part.strip().lower() for part in value.split(",")]
+    return [part for part in parts if part]
 
 
 def _parse_http_url(value: str, field_name: str):

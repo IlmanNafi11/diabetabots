@@ -1,0 +1,12 @@
+# Run the app from the published Docker Hub image instead of a local build.
+#
+# Usage:
+#   DIABETABOT_VERSION=0.1.1 docker compose -f docker-compose.yml -f docker-compose.release.yml up -d
+#
+# The image already contains the app, the TKPI+GI dataset, and the indexing
+# script, so `docker compose run --rm app index` works without a repo checkout.
+
+services:
+  app:
+    image: ilmannafi/diabetabot:${DIABETABOT_VERSION:?DIABETABOT_VERSION must be set}
+    build: !reset null

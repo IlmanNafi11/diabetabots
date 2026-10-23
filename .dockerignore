@@ -12,7 +12,7 @@ __pycache__
 htmlcov
 reports
 chroma_db
-data
+# `data/` is shipped on purpose: the indexing command runs from the image.
 .env
 .env.*
 *.md

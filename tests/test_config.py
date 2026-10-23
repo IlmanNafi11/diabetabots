@@ -281,3 +281,58 @@ def test_settings_rejects_non_positive_max_user_question_chars(
         monkeypatch.setenv("MAX_USER_QUESTION_CHARS", bad)
         with pytest.raises(ValueError, match="greater than 0"):
             Settings()
+
+
+def test_settings_accepts_extra_ollama_host_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An operator can widen the allowlist for an external Ollama host."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://ollama.internal:11434")
+    monkeypatch.setenv("OLLAMA_ALLOWED_HOSTS", "ollama.internal")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+
+    settings = Settings()
+
+    assert settings.ollama_base_url == "http://ollama.internal:11434"
+
+
+def test_settings_accepts_extra_ollama_private_ip_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Deployers commonly reach Ollama by LAN IP, which the allowlist must permit on request."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://192.168.1.9:11434")
+    monkeypatch.setenv("OLLAMA_ALLOWED_HOSTS", "192.168.1.9")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+
+    settings = Settings()
+
+    assert settings.ollama_base_url == "http://192.168.1.9:11434"
+
+
+def test_settings_still_rejects_host_outside_configured_allowlist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Widening the allowlist must not disable it."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://evil.example.com:11434")
+    monkeypatch.setenv("OLLAMA_ALLOWED_HOSTS", "ollama.internal, 192.168.1.9")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+
+    with pytest.raises(ValidationError, match="ollama_base_url"):
+        Settings()
+
+
+def test_settings_rejects_malformed_ollama_allowed_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blank or URL-shaped entry is a configuration mistake, not a wildcard."""
+    monkeypatch.setenv("OLLAMA_ALLOWED_HOSTS", "http://ollama.internal:11434")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "real-token")
+    monkeypatch.setenv("LLM_API_KEY", "real-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h:5432/d")
+
+    with pytest.raises(ValidationError, match="ollama_allowed_hosts"):
+        Settings()
