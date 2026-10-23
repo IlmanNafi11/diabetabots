@@ -1,0 +1,66 @@
+name: CI
+
+# Quality gate. Runs on pull requests into `staging` and `main`, and on pushes
+# to `staging`. Every stage must be green; a skipped test counts as a failure
+# (FAIL_ON_SKIP=1). Release tags are gated separately in release.yml.
+
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Lint, format, unit & integration
+    runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://diabetabot:diabetabot@127.0.0.1:5432/diabetabot_test
+      FAIL_ON_SKIP: "1"
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: diabetabot
+          POSTGRES_PASSWORD: diabetabot
+          POSTGRES_DB: diabetabot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U diabetabot -d diabetabot_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Unit tests
+        run: uv run pytest -m "not integration" -q
+
+      - name: Integration tests
+        run: uv run pytest -m "integration and not requires_ollama" -q
