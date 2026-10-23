@@ -12,7 +12,7 @@ markers = [
 
 [project]
 name = "diabetabots"
-version = "0.1.0"
+version = "0.1.1"
 description = "DiabetaBot — Telegram calorie & GI analysis bot"
 requires-python = ">=3.12"
 dependencies = [

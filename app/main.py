@@ -67,7 +67,7 @@ def create_app(
     application = FastAPI(
         title="DiabetaBot",
         description="Telegram chatbot for personal nutrition and glycemic feasibility analysis.",
-        version="0.1.0",
+        version="0.1.1",
         lifespan=lifespan,
         docs_url=None if production else "/docs",
         openapi_url=None if production else "/openapi.json",
