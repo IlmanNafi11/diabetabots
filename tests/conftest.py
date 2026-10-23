@@ -84,3 +84,29 @@ async def async_session(
     """Yield a session for tests that need to touch the test database."""
     async with sessionmaker() as session:
         yield session
+
+
+# ---------------------------------------------------------------------------
+# Skip guard
+# ---------------------------------------------------------------------------
+# A skipped test reports success to the exit code, which turns a CI quality
+# gate into a false green. When FAIL_ON_SKIP=1 (set by CI), any test that
+# skips for a reason other than an explicit ``requires_ollama`` deselection
+# fails the session instead.
+_unexpected_skips: list[str] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Record skips so the session can fail on them at the end."""
+    if report.skipped and report.when in ("setup", "call"):
+        _unexpected_skips.append(f"{report.nodeid}: {report.longrepr}")
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the run when skips appeared under FAIL_ON_SKIP=1."""
+    if os.environ.get("FAIL_ON_SKIP") != "1" or not _unexpected_skips:
+        return
+    session.exitstatus = 1
+    print(f"\nFAIL_ON_SKIP: {len(_unexpected_skips)} unexpected skipped test(s):")
+    for entry in _unexpected_skips:
+        print(f"  - {entry}")

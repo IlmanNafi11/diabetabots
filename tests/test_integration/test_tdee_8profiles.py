@@ -94,6 +94,7 @@ def tdee_error_pct(computed: float, reference: float) -> float:
 
 
 @pytest.mark.asyncio()
+@pytest.mark.integration
 class TestTdee8Profiles:
     """Verify TDEE accuracy for all 8 PRD simulation profiles."""
 

@@ -73,6 +73,7 @@ def indexed_collection(
 
 
 @pytest.mark.integration
+@pytest.mark.requires_ollama
 def test_precision_at_5_meets_spike_threshold(
     indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
     settings: Settings,
@@ -96,6 +97,7 @@ def test_precision_at_5_meets_spike_threshold(
 
 
 @pytest.mark.integration
+@pytest.mark.requires_ollama
 def test_retrieval_uses_configured_top_k(
     indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
     settings: Settings,
@@ -123,6 +125,7 @@ def _write_raw_log(results: list[dict]) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.requires_ollama
 def test_indexed_collection_embeds_with_ollama(
     indexed_collection: tuple[chromadb.Collection, OllamaEmbedder],
 ) -> None:

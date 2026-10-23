@@ -7,6 +7,7 @@ asyncio_mode = "auto"
 addopts = "-ra --strict-markers"
 markers = [
     "integration: cross-boundary tests that touch a real database, embeddings, or external service",
+    "requires_ollama: integration tests that need a reachable Ollama endpoint; deselected in CI",
 ]
 
 [project]

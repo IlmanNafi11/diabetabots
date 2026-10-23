@@ -159,6 +159,7 @@ def _extract_nutrients(narrative: str) -> dict[str, float | None]:
 
 
 @pytest.mark.integration
+@pytest.mark.requires_ollama
 def test_format_food_context_matches_source(
     rag_service: RAGService,
     ground_truth: dict[str, dict[str, float]],
@@ -229,6 +230,7 @@ def test_format_food_context_matches_source(
 
 
 @pytest.mark.integration
+@pytest.mark.requires_ollama
 @pytest.mark.parametrize(
     "food_query,gram,atol_kcal,atol_macro",
     [
